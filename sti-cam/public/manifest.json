@@ -1,0 +1,17 @@
+{
+  "name": "STI Cam",
+  "short_name": "STI Cam",
+  "description": "Registro fotográfico de obra directo a Google Drive",
+  "start_url": "/sti-cam/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111113",
+  "theme_color": "#111113",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23111113'/><rect x='10' y='30' width='80' height='55' rx='6' stroke='%23F97316' stroke-width='5' fill='none'/><circle cx='50' cy='57' r='16' stroke='%23F97316' stroke-width='5' fill='none'/><circle cx='50' cy='57' r='6' fill='%23F97316'/><rect x='30' y='18' width='40' height='12' rx='4' stroke='%23F97316' stroke-width='4' fill='none'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
