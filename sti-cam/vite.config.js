@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/cloud_cam/',
+  base: '/sti_cam/',
   server: {
     https: false,      // En dev local. getUserMedia requiere HTTPS en producción
     host: true,        // Accesible desde el celular en la misma red
