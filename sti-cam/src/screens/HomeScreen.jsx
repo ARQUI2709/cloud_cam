@@ -22,7 +22,7 @@ const CamIconLarge = () => (
 
 export default function HomeScreen({
   user, selectedProject, onSelectProject,
-  queue, sessionCount, onOpenCamera,
+  queue, sessionCount, onOpenCamera, onOpenGallery,
 }) {
   const project = selectedProject ? getProjectById(selectedProject) : null;
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
@@ -78,6 +78,11 @@ export default function HomeScreen({
         </p>
         {project && (
           <p style={styles.cameraDest}>📁 STI-Fotos / {project.name}</p>
+        )}
+        {selectedProject && (
+          <button onClick={onOpenGallery} style={styles.galleryBtn}>
+            🖼 Ver fotos
+          </button>
         )}
       </div>
 
@@ -146,5 +151,11 @@ const styles = {
   cameraDest: {
     fontSize: font.sm, color: colors.textDim, background: colors.bgInput,
     padding: '5px 12px', borderRadius: radius.sm, margin: 0,
+  },
+  galleryBtn: {
+    padding: '10px 20px', borderRadius: radius.md,
+    border: `1px solid ${colors.borderLight}`, background: colors.bgInput,
+    color: colors.text, fontSize: font.base, cursor: 'pointer',
+    fontFamily: font.family, marginTop: spacing.sm,
   },
 };

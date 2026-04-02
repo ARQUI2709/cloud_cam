@@ -51,45 +51,76 @@ export class CameraService {
 
   /**
    * Captura un frame del video como Blob JPEG.
+   * Uses the visual dimensions of the video (as displayed on screen)
+   * to ensure correct orientation on mobile devices.
    * @param {string} aspectId - '4:3', '16:9', '1:1', 'full'
    * @param {number} quality - JPEG quality 0-1
    * @returns {Promise<Blob>}
    */
   capture(aspectId = '4:3', quality = 0.92) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       if (!this.videoElement) {
         reject(new Error('Camera not started'));
         return;
       }
 
       const video = this.videoElement;
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
 
-      let sx = 0, sy = 0, sw = vw, sh = vh;
+      // Use createImageBitmap to get a correctly oriented bitmap
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(video);
+      } catch {
+        reject(new Error('Failed to create bitmap from video'));
+        return;
+      }
+
+      const bw = bitmap.width;
+      const bh = bitmap.height;
+
+      // On mobile in portrait, the bitmap may still be landscape.
+      // Check if we need to treat it as portrait.
+      const isPortrait = window.innerHeight > window.innerWidth;
+      const bitmapIsLandscape = bw > bh;
+      const needsRotation = isPortrait && bitmapIsLandscape;
+
+      // Effective dimensions (as the user sees the preview)
+      const ew = needsRotation ? bh : bw;
+      const eh = needsRotation ? bw : bh;
+
+      let cx = 0, cy = 0, cw = ew, ch = eh;
 
       const ratio = ASPECT_RATIOS[aspectId];
       if (ratio) {
-        // En modo retrato (celular), invertimos la proporción
         const targetRatio = ratio.h / ratio.w; // Portrait: h > w
-        const currentRatio = vh / vw;
+        const currentRatio = eh / ew;
 
         if (currentRatio > targetRatio) {
-          // Video más alto → recortar arriba/abajo
-          sh = Math.round(vw * targetRatio);
-          sy = Math.round((vh - sh) / 2);
+          ch = Math.round(ew * targetRatio);
+          cy = Math.round((eh - ch) / 2);
         } else {
-          // Video más ancho → recortar lados
-          sw = Math.round(vh / targetRatio);
-          sx = Math.round((vw - sw) / 2);
+          cw = Math.round(eh / targetRatio);
+          cx = Math.round((ew - cw) / 2);
         }
       }
 
-      this.canvas.width = sw;
-      this.canvas.height = sh;
-
+      this.canvas.width = cw;
+      this.canvas.height = ch;
       const ctx = this.canvas.getContext('2d');
-      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      if (needsRotation) {
+        // Draw rotated: the bitmap is landscape but we need portrait output
+        ctx.save();
+        ctx.translate(cw / 2, ch / 2);
+        ctx.rotate(-Math.PI / 2);
+        // After -90° rotation, map crop coords back to original bitmap space
+        ctx.drawImage(bitmap, cy, cx, ch, cw, -ch / 2, -cw / 2, ch, cw);
+        ctx.restore();
+      } else {
+        ctx.drawImage(bitmap, cx, cy, cw, ch, 0, 0, cw, ch);
+      }
+
+      bitmap.close();
 
       this.canvas.toBlob(
         (blob) => {

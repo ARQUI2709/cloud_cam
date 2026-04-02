@@ -3,10 +3,11 @@ import { useAuth } from './hooks/useAuth';
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import CameraScreen from './screens/CameraScreen';
+import GalleryScreen from './screens/GalleryScreen';
 
 export default function App() {
   const auth = useAuth();
-  const [activeScreen, setActiveScreen] = useState('home'); // 'home' | 'camera'
+  const [activeScreen, setActiveScreen] = useState('home'); // 'home' | 'camera' | 'gallery'
   const [selectedProject, setSelectedProject] = useState(null);
   const [queue, setQueue] = useState([]);
   const [sessionCount, setSessionCount] = useState(0);
@@ -24,6 +25,15 @@ export default function App() {
 
   if (!auth.isAuthenticated) {
     return <AuthScreen onSignIn={auth.signIn} />;
+  }
+
+  if (activeScreen === 'gallery' && selectedProject) {
+    return (
+      <GalleryScreen
+        project={selectedProject}
+        onClose={() => setActiveScreen('home')}
+      />
+    );
   }
 
   if (activeScreen === 'camera' && selectedProject) {
@@ -47,6 +57,7 @@ export default function App() {
       queue={queue}
       sessionCount={sessionCount}
       onOpenCamera={() => setActiveScreen('camera')}
+      onOpenGallery={() => setActiveScreen('gallery')}
       onSignOut={auth.signOut}
     />
   );
