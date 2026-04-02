@@ -2,7 +2,7 @@
   "name": "STI Cam",
   "short_name": "STI Cam",
   "description": "Registro fotográfico de obra directo a Google Drive",
-  "start_url": "/sti-cam/",
+  "start_url": "/sti_cam/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#111113",
