@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 import { getProject as getProjectById } from '../config/projects';
+import { getProjectFolderId, listFiles } from '../infrastructure/GoogleDrive';
+import { GOOGLE_CLIENT_ID } from '../config/google';
 import ProjectSelector from '../components/ProjectSelector';
 import UploadStatusBar from '../components/UploadStatusBar';
 
@@ -20,13 +23,69 @@ const CamIconLarge = () => (
   </svg>
 );
 
+function groupByDate(photos) {
+  const groups = {};
+  for (const photo of photos) {
+    const date = photo.createdTime
+      ? new Date(photo.createdTime).toLocaleDateString('es-CO', {
+          weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+        })
+      : 'Sin fecha';
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(photo);
+  }
+  return Object.entries(groups);
+}
+
 export default function HomeScreen({
   user, selectedProject, onSelectProject,
-  queue, sessionCount, onOpenCamera, onOpenGallery,
+  queue, sessionCount, onOpenCamera,
 }) {
   const project = selectedProject ? getProjectById(selectedProject) : null;
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
   const doneCount = queue.filter((q) => q.status === 'done').length;
+
+  const [photos, setPhotos] = useState([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!selectedProject || !project || !GOOGLE_CLIENT_ID) {
+      setPhotos([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingPhotos(true);
+    getProjectFolderId(project.name)
+      .then((folderId) => listFiles(folderId))
+      .then((files) => { if (!cancelled) setPhotos(files); })
+      .catch(() => { if (!cancelled) setPhotos([]); })
+      .finally(() => { if (!cancelled) setLoadingPhotos(false); });
+    return () => { cancelled = true; };
+  }, [selectedProject]);
+
+  const getThumbnailUrl = (photo) => {
+    if (photo.thumbnailLink) return photo.thumbnailLink.replace(/=s\d+/, '=s400');
+    return `https://drive.google.com/thumbnail?id=${photo.id}&sz=w400`;
+  };
+
+  const getFullUrl = (photo) => {
+    return `https://drive.google.com/thumbnail?id=${photo.id}&sz=w1200`;
+  };
+
+  const handleShare = async (photo) => {
+    const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
+    if (navigator.share) {
+      try { await navigator.share({ title: photo.name, url: shareUrl }); } catch {}
+    } else {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const dateGroups = groupByDate(photos);
 
   return (
     <div style={styles.container}>
@@ -40,7 +99,7 @@ export default function HomeScreen({
         </div>
         <div style={styles.headerRight}>
           {sessionCount > 0 && (
-            <span style={styles.countBadge}>{sessionCount} 📷</span>
+            <span style={styles.countBadge}>{sessionCount}</span>
           )}
           <div style={styles.driveBadge}>
             <span style={styles.driveDot} />Drive
@@ -71,18 +130,13 @@ export default function HomeScreen({
         </button>
         <p style={styles.cameraLabel}>
           {!selectedProject
-            ? '↑ Selecciona un proyecto primero'
+            ? 'Selecciona un proyecto primero'
             : sessionCount === 0
-            ? 'Abrir cámara'
+            ? 'Abrir camara'
             : 'Continuar captura'}
         </p>
         {project && (
-          <p style={styles.cameraDest}>📁 STI-Fotos / {project.name}</p>
-        )}
-        {selectedProject && (
-          <button onClick={onOpenGallery} style={styles.galleryBtn}>
-            🖼 Ver fotos
-          </button>
+          <p style={styles.cameraDest}>STI-Fotos / {project.name}</p>
         )}
       </div>
 
@@ -93,6 +147,90 @@ export default function HomeScreen({
           uploadingCount={uploadingCount}
           doneCount={doneCount}
         />
+      )}
+
+      {/* Inline Gallery */}
+      {selectedProject && (
+        <div style={styles.gallerySection}>
+          <div style={styles.gallerySectionHeader}>
+            <label style={styles.label}>FOTOS DEL PROYECTO</label>
+            {photos.length > 0 && (
+              <span style={styles.photoCount}>{photos.length} fotos</span>
+            )}
+          </div>
+
+          {loadingPhotos && (
+            <div style={styles.galleryLoading}>
+              <div style={styles.spinner} />
+            </div>
+          )}
+
+          {!loadingPhotos && photos.length === 0 && (
+            <p style={styles.galleryEmpty}>Sin fotos aun. Toma la primera.</p>
+          )}
+
+          {!loadingPhotos && dateGroups.map(([date, groupPhotos]) => (
+            <div key={date}>
+              <div style={styles.dateHeader}>{date}</div>
+              <div style={styles.grid}>
+                {groupPhotos.map((photo) => {
+                  const idx = photos.indexOf(photo);
+                  return (
+                    <div key={photo.id} onClick={() => setViewerIndex(idx)} style={styles.gridItem}>
+                      <img src={getThumbnailUrl(photo)} alt="" style={styles.gridImg} loading="lazy" />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Photo Viewer Overlay */}
+      {viewerIndex !== null && photos[viewerIndex] && (
+        <div style={styles.viewer}>
+          <div style={styles.viewerHeader}>
+            <button onClick={() => setViewerIndex(null)} style={styles.viewerClose}>✕</button>
+            <span style={styles.viewerCount}>{viewerIndex + 1} / {photos.length}</span>
+            <button
+              onClick={() => handleShare(photos[viewerIndex])}
+              style={styles.shareBtn}
+            >
+              {copied ? '✓ Copiado' : 'Compartir'}
+            </button>
+          </div>
+
+          <div style={styles.viewerBody}>
+            {viewerIndex > 0 && (
+              <button
+                onClick={() => setViewerIndex(viewerIndex - 1)}
+                style={{ ...styles.navBtn, left: 8 }}
+              >
+                ‹
+              </button>
+            )}
+            <img
+              src={getFullUrl(photos[viewerIndex])}
+              alt={photos[viewerIndex].name}
+              style={styles.viewerImg}
+            />
+            {viewerIndex < photos.length - 1 && (
+              <button
+                onClick={() => setViewerIndex(viewerIndex + 1)}
+                style={{ ...styles.navBtn, right: 8 }}
+              >
+                ›
+              </button>
+            )}
+          </div>
+
+          <div style={styles.viewerFooter}>
+            <span style={{ fontSize: font.sm, color: colors.textMuted }}>
+              {photos[viewerIndex].name}
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -131,7 +269,7 @@ const styles = {
   section: { padding: `${spacing.lg}px ${spacing.xl}px` },
   label: {
     fontSize: font.xs, fontWeight: 600, color: colors.textDim,
-    letterSpacing: '0.08em', marginBottom: spacing.sm, display: 'block',
+    letterSpacing: '0.08em', marginBottom: 0, display: 'block',
   },
   cameraSection: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -152,10 +290,82 @@ const styles = {
     fontSize: font.sm, color: colors.textDim, background: colors.bgInput,
     padding: '5px 12px', borderRadius: radius.sm, margin: 0,
   },
-  galleryBtn: {
-    padding: '10px 20px', borderRadius: radius.md,
-    border: `1px solid ${colors.borderLight}`, background: colors.bgInput,
-    color: colors.text, fontSize: font.base, cursor: 'pointer',
-    fontFamily: font.family, marginTop: spacing.sm,
+  // Gallery section
+  gallerySection: {
+    padding: `${spacing.lg}px 0`,
+    borderTop: `1px solid ${colors.border}`,
+  },
+  gallerySectionHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: `0 ${spacing.xl}px ${spacing.sm}px`,
+  },
+  photoCount: { fontSize: font.sm, color: colors.textDim },
+  galleryLoading: {
+    display: 'flex', justifyContent: 'center', padding: spacing.xxl,
+  },
+  spinner: {
+    width: 28, height: 28, border: '3px solid rgba(255,255,255,0.15)',
+    borderTopColor: colors.accent, borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+  galleryEmpty: {
+    padding: `${spacing.lg}px ${spacing.xl}px`,
+    color: colors.textDim, fontSize: font.base, textAlign: 'center',
+  },
+  dateHeader: {
+    fontSize: font.sm, fontWeight: 600, color: colors.textMuted,
+    padding: `${spacing.sm}px ${spacing.xl}px`,
+    textTransform: 'capitalize',
+  },
+  grid: {
+    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2,
+    padding: '0 2px',
+  },
+  gridItem: {
+    aspectRatio: '1', overflow: 'hidden', cursor: 'pointer',
+    background: colors.bgCard,
+  },
+  gridImg: {
+    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+  },
+  // Viewer overlay
+  viewer: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)',
+    zIndex: 100, display: 'flex', flexDirection: 'column',
+    fontFamily: font.family,
+  },
+  viewerHeader: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '14px 16px', flexShrink: 0,
+  },
+  viewerClose: {
+    background: 'none', border: 'none', color: 'white',
+    fontSize: 22, cursor: 'pointer', padding: '4px 8px',
+  },
+  viewerCount: {
+    flex: 1, fontSize: font.sm, color: colors.textMuted, textAlign: 'center',
+  },
+  shareBtn: {
+    padding: '8px 16px', borderRadius: radius.md, border: 'none',
+    background: colors.accent, color: 'white',
+    fontSize: font.sm, fontWeight: 600, cursor: 'pointer', fontFamily: font.family,
+  },
+  viewerBody: {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    position: 'relative', overflow: 'hidden',
+  },
+  viewerImg: {
+    maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
+  },
+  navBtn: {
+    position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+    width: 44, height: 44, borderRadius: '50%',
+    background: 'rgba(255,255,255,0.15)', border: 'none',
+    color: 'white', fontSize: 28, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(4px)', zIndex: 2,
+  },
+  viewerFooter: {
+    padding: '10px 16px', textAlign: 'center', flexShrink: 0,
   },
 };

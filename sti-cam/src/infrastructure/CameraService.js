@@ -92,7 +92,12 @@ export class CameraService {
 
       const ratio = ASPECT_RATIOS[aspectId];
       if (ratio) {
-        const targetRatio = ratio.h / ratio.w; // Portrait: h > w
+        // In portrait mode: photo should be taller than wide (e.g. 4:3 → 3w:4h)
+        // In landscape mode: photo should be wider than tall (e.g. 4:3 → 4w:3h)
+        const isDevicePortrait = window.innerHeight > window.innerWidth;
+        const targetRatio = isDevicePortrait
+          ? ratio.w / ratio.h   // portrait: e.g. 4:3 → 4/3 = 1.33 (tall)
+          : ratio.h / ratio.w;  // landscape: e.g. 4:3 → 3/4 = 0.75 (wide)
         const currentRatio = eh / ew;
 
         if (currentRatio > targetRatio) {
