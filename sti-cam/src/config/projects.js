@@ -1,15 +1,40 @@
 /**
- * Lista de proyectos activos.
- * Edita este archivo para agregar/quitar proyectos.
- * 
- * folderId: (opcional) ID de la carpeta en Google Drive.
- *           Si se omite, se crea automáticamente en STI-Fotos/
+ * Gestión de proyectos con persistencia en localStorage.
  */
-export const PROJECTS = [
-  { id: 'fsfb',      name: 'FSFB Bloque B',               icon: '🏥', folderId: null },
-  { id: 'compensar', name: 'Compensar - Complejo Acuático', icon: '🏊', folderId: null },
-  { id: 'entrerios', name: 'Entre Ríos',                   icon: '🏘️', folderId: null },
-  { id: 'portal',    name: 'Portal de la Autopista',       icon: '🏢', folderId: null },
-];
 
-export const getProject = (id) => PROJECTS.find((p) => p.id === id);
+const STORAGE_KEY = 'sti-cam-projects';
+
+function loadProjects() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProjects(projects) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+}
+
+export function getProjects() {
+  return loadProjects();
+}
+
+export function getProject(id) {
+  return loadProjects().find((p) => p.id === id);
+}
+
+export function addProject(name, icon) {
+  const projects = loadProjects();
+  const id = crypto.randomUUID?.() || `p_${Date.now()}`;
+  const project = { id, name, icon, folderId: null };
+  projects.push(project);
+  saveProjects(projects);
+  return project;
+}
+
+export function removeProject(id) {
+  const projects = loadProjects().filter((p) => p.id !== id);
+  saveProjects(projects);
+}
