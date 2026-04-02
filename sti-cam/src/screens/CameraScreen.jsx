@@ -21,7 +21,6 @@ export default function CameraScreen({
   const [flashAnim, setFlashAnim] = useState(false);
   const [lastThumb, setLastThumb] = useState(null);
   const [showQueue, setShowQueue] = useState(false);
-  const [localCount, setLocalCount] = useState(0);
 
   const projectInfo = getProject(project);
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
@@ -43,11 +42,10 @@ export default function CameraScreen({
     setFlashAnim(true);
     setTimeout(() => setFlashAnim(false), 150);
 
-    const num = sessionCount + localCount + 1;
+    const num = sessionCount + 1;
     const photo = createPhoto({ blob, projectId: project, sessionNumber: num });
 
     setLastThumb(photo.thumbUrl);
-    setLocalCount((c) => c + 1);
     addToQueue({
       id: photo.id,
       projectId: photo.projectId,
@@ -59,13 +57,25 @@ export default function CameraScreen({
     });
 
     enqueueUpload(photo);
-  }, [camera, aspect, project, sessionCount, localCount, addToQueue, enqueueUpload]);
+  }, [camera, aspect, project, sessionCount, addToQueue, enqueueUpload]);
 
   return (
     <div style={styles.fullscreen}>
       <style>{globalStyles}</style>
 
       <video ref={videoRef} playsInline muted autoPlay style={styles.video} />
+
+      {/* Aspect ratio crop overlay */}
+      {aspect !== 'full' && (
+        <div style={styles.cropOverlay}>
+          <div style={styles.cropLetterbox} />
+          <div style={{
+            ...styles.cropCenter,
+            aspectRatio: aspect === '4:3' ? '3/4' : aspect === '16:9' ? '9/16' : '1/1',
+          }} />
+          <div style={styles.cropLetterbox} />
+        </div>
+      )}
 
       {flashAnim && <div style={styles.flash} />}
 
@@ -75,8 +85,8 @@ export default function CameraScreen({
         <div style={styles.projectBadge}>
           {projectInfo?.icon} {projectInfo?.name}
         </div>
-        {(sessionCount + localCount) > 0 && (
-          <div style={styles.countBadge}>{sessionCount + localCount}</div>
+        {(sessionCount) > 0 && (
+          <div style={styles.countBadge}>{sessionCount}</div>
         )}
       </div>
 
@@ -137,6 +147,17 @@ const styles = {
     fontFamily: font.family,
   },
   video: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' },
+  cropOverlay: {
+    position: 'absolute', inset: 0, zIndex: 5,
+    display: 'flex', flexDirection: 'column', pointerEvents: 'none',
+  },
+  cropLetterbox: {
+    flex: 1, background: 'rgba(0,0,0,0.5)',
+  },
+  cropCenter: {
+    width: '100%', flexShrink: 0,
+    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.3)',
+  },
   flash: {
     position: 'absolute', inset: 0, background: 'white', zIndex: 10,
     animation: 'flashFade 0.15s ease forwards', pointerEvents: 'none',
