@@ -1,15 +1,35 @@
 /**
  * Infraestructura: Google OAuth 2.0
  * Usa Google Identity Services (GIS) Token Model.
- * 
+ *
  * El script de GIS se carga dinámicamente.
+ * Token y user info persisten en sessionStorage.
  */
 
 import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from '../config/google.js';
 
+const STORAGE_KEY = 'sti-cam-auth';
+
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
+
+// Restore from sessionStorage on load
+try {
+  const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
+  if (saved && saved.token && saved.expiresAt > Date.now()) {
+    accessToken = saved.token;
+    tokenExpiresAt = saved.expiresAt;
+  }
+} catch {}
+
+function persistSession(user) {
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+    token: accessToken,
+    expiresAt: tokenExpiresAt,
+    user,
+  }));
+}
 
 /**
  * Carga el script de Google Identity Services.
@@ -42,8 +62,20 @@ export async function initAuth() {
 }
 
 /**
+ * Returns saved user info if session is still valid.
+ */
+export function getSavedUser() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
+    if (saved && saved.user && saved.expiresAt > Date.now()) {
+      return saved.user;
+    }
+  } catch {}
+  return null;
+}
+
+/**
  * Solicita token de acceso al usuario (popup de Google).
- * @returns {Promise<{accessToken: string, email: string, name: string}>}
  */
 export function requestAccessToken() {
   return new Promise((resolve, reject) => {
@@ -58,20 +90,23 @@ export function requestAccessToken() {
         accessToken = response.access_token;
         tokenExpiresAt = Date.now() + (response.expires_in || 3600) * 1000;
 
-        // Obtener info del usuario
         fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` },
         })
           .then((r) => r.json())
           .then((info) => {
-            resolve({
-              accessToken,
+            const user = {
               email: info.email,
               name: info.name || info.email,
               picture: info.picture,
-            });
+            };
+            persistSession(user);
+            resolve({ accessToken, ...user });
           })
-          .catch(() => resolve({ accessToken, email: '', name: '' }));
+          .catch(() => {
+            persistSession(null);
+            resolve({ accessToken, email: '', name: '' });
+          });
       },
       error_callback: (err) => {
         reject(new Error(err.message || 'Auth error'));
@@ -89,7 +124,6 @@ export async function getAccessToken() {
   if (accessToken && Date.now() < tokenExpiresAt - 60000) {
     return accessToken;
   }
-  // Token expirado, pedir nuevo
   const result = await requestAccessToken();
   return result.accessToken;
 }
@@ -103,6 +137,7 @@ export function revokeToken() {
     accessToken = null;
     tokenExpiresAt = 0;
   }
+  sessionStorage.removeItem(STORAGE_KEY);
 }
 
 /**

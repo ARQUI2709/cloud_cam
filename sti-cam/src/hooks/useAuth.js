@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { initAuth, requestAccessToken, revokeToken, hasValidToken } from '../infrastructure/GoogleAuth';
+import { initAuth, requestAccessToken, revokeToken, hasValidToken, getSavedUser } from '../infrastructure/GoogleAuth';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 
 /**
@@ -20,7 +20,11 @@ export function useAuth() {
       return;
     }
     initAuth()
-      .then(() => setLoading(false))
+      .then(() => {
+        const saved = getSavedUser();
+        if (saved) setUser(saved);
+        setLoading(false);
+      })
       .catch((err) => {
         setError(err.message);
         setLoading(false);

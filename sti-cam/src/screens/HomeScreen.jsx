@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 import { getProject as getProjectById } from '../config/projects';
 import { getProjectFolderId, listFiles } from '../infrastructure/GoogleDrive';
 import { GOOGLE_CLIENT_ID } from '../config/google';
+import { getAccessToken } from '../infrastructure/GoogleAuth';
 import ProjectSelector from '../components/ProjectSelector';
 import UploadStatusBar from '../components/UploadStatusBar';
 
@@ -49,6 +50,9 @@ export default function HomeScreen({
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const touchStartX = useRef(0);
+  const touchDelta = useRef(0);
 
   useEffect(() => {
     if (!selectedProject || !project || !GOOGLE_CLIENT_ID) {
@@ -75,15 +79,51 @@ export default function HomeScreen({
   };
 
   const handleShare = async (photo) => {
-    const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
-    if (navigator.share) {
-      try { await navigator.share({ title: photo.name, url: shareUrl }); } catch {}
-    } else {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    setSharing(true);
+    try {
+      // Download actual file from Drive API
+      const token = await getAccessToken();
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${photo.id}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const blob = await res.blob();
+      const file = new File([blob], photo.name || 'foto.jpg', { type: 'image/jpeg' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: photo.name });
+      } else if (navigator.share) {
+        // Fallback: share link if file sharing not supported
+        const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
+        await navigator.share({ title: photo.name, url: shareUrl });
+      } else {
+        const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch { /* user cancelled or error */ }
+    setSharing(false);
   };
+
+  const handleTouchStart = useCallback((e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchDelta.current = 0;
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    touchDelta.current = e.touches[0].clientX - touchStartX.current;
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    const threshold = 60;
+    if (touchDelta.current > threshold && viewerIndex > 0) {
+      setViewerIndex(viewerIndex - 1);
+    } else if (touchDelta.current < -threshold && viewerIndex < photos.length - 1) {
+      setViewerIndex(viewerIndex + 1);
+    }
+    touchDelta.current = 0;
+  }, [viewerIndex, photos.length]);
 
   const dateGroups = groupByDate(photos);
 
@@ -197,11 +237,16 @@ export default function HomeScreen({
               onClick={() => handleShare(photos[viewerIndex])}
               style={styles.shareBtn}
             >
-              {copied ? '✓ Copiado' : 'Compartir'}
+              {sharing ? '...' : copied ? '✓ Copiado' : 'Compartir'}
             </button>
           </div>
 
-          <div style={styles.viewerBody}>
+          <div
+            style={styles.viewerBody}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
             {viewerIndex > 0 && (
               <button
                 onClick={() => setViewerIndex(viewerIndex - 1)}
