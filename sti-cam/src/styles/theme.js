@@ -4,7 +4,7 @@
  */
 
 export const colors = {
-  bg:          '#111113',
+  bg:          '#19181e',
   bgCard:      '#1a1c1e',
   bgInput:     '#1F2937',
   border:      '#1F2937',

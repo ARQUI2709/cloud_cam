@@ -490,10 +490,10 @@ const styles = {
   },
   actionBtn: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 44, height: 44, borderRadius: '50%', background: 'transparent',
+    width: 72, height: 72, borderRadius: '50%', background: 'transparent',
     border: 'none', cursor: 'pointer',
   },
-  actionIcon: { width: 24, height: 24, objectFit: 'contain', opacity: 0.8 },
+  actionIcon: { width: 60, height: 60, objectFit: 'contain', opacity: 0.8 },
   viewerBody: {
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative', overflow: 'hidden',

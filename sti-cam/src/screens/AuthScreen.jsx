@@ -67,7 +67,7 @@ export default function AuthScreen({ onSignIn }) {
 
 const styles = {
   container: {
-    fontFamily: font.family, background: '#17191e',
+    fontFamily: font.family, background: '#19181e',
     minHeight: '100dvh', color: colors.text,
     maxWidth: 480, margin: '0 auto',
     display: 'flex', flexDirection: 'column',

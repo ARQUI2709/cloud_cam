@@ -5,8 +5,8 @@
   "start_url": "/sti_cam/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#111113",
-  "theme_color": "#111113",
+  "background_color": "#19181e",
+  "theme_color": "#19181e",
   "icons": [
     {
       "src": "/sti_cam/icon.png",
