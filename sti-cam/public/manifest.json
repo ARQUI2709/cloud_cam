@@ -9,7 +9,7 @@
   "theme_color": "#111113",
   "icons": [
     {
-      "src": "/sti_cam/camera.png",
+      "src": "/sti_cam/icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
