@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 import { getProject as getProjectById } from '../config/projects';
-import { getProjectFolderId, listFiles } from '../infrastructure/GoogleDrive';
+import { getProjectFolderId, listFiles, deleteFile } from '../infrastructure/GoogleDrive';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 import { getAccessToken } from '../infrastructure/GoogleAuth';
 import ProjectSelector from '../components/ProjectSelector';
@@ -10,7 +10,7 @@ import Footer from '../components/Footer';
 import cameraImg from '../assets/camera.png';
 
 const CamIconSmall = () => (
-  <img src={cameraImg} alt="STI Cam" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+  <img src={cameraImg} alt="STI Cam" style={{ width: 36, height: 36, objectFit: 'contain' }} />
 );
 
 const CamIconLarge = () => (
@@ -50,6 +50,8 @@ export default function HomeScreen({
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDeletePhoto, setConfirmDeletePhoto] = useState(false);
   const touchStartX = useRef(0);
   const touchDelta = useRef(0);
 
@@ -103,6 +105,22 @@ export default function HomeScreen({
       }
     } catch { /* user cancelled or error */ }
     setSharing(false);
+  };
+
+  const handleDeletePhoto = async (photo) => {
+    setDeleting(true);
+    try {
+      await deleteFile(photo.id);
+      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      // Adjust viewer index
+      if (viewerIndex >= photos.length - 1) {
+        setViewerIndex(photos.length > 1 ? photos.length - 2 : null);
+      }
+      setConfirmDeletePhoto(false);
+    } catch (e) {
+      console.error('[gallery] delete failed:', e);
+    }
+    setDeleting(false);
   };
 
   const handleTouchStart = useCallback((e) => {
@@ -277,10 +295,37 @@ export default function HomeScreen({
           </div>
 
           <div style={styles.viewerFooter}>
-            <span style={{ fontSize: font.sm, color: colors.textMuted }}>
-              {photos[viewerIndex].name}
-            </span>
+            <button
+              onClick={() => setConfirmDeletePhoto(true)}
+              style={styles.deletePhotoBtn}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+              Eliminar
+            </button>
           </div>
+
+          {/* Delete confirmation */}
+          {confirmDeletePhoto && (
+            <div style={styles.deleteOverlay}>
+              <div style={styles.logoutDialog}>
+                <p style={styles.logoutText}>Eliminar foto?</p>
+                <p style={styles.logoutSubtext}>Se eliminara de Google Drive</p>
+                <div style={styles.logoutActions}>
+                  <button onClick={() => setConfirmDeletePhoto(false)} style={styles.logoutCancel}>Cancelar</button>
+                  <button
+                    onClick={() => handleDeletePhoto(photos[viewerIndex])}
+                    disabled={deleting}
+                    style={styles.logoutConfirm}
+                  >
+                    {deleting ? '...' : 'Eliminar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* Logout confirmation */}
@@ -469,5 +514,16 @@ const styles = {
   },
   viewerFooter: {
     padding: '10px 16px', textAlign: 'center', flexShrink: 0,
+  },
+  deletePhotoBtn: {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '8px 16px', borderRadius: radius.md, border: `1px solid ${colors.borderLight}`,
+    background: 'transparent', color: colors.textMuted,
+    fontSize: font.sm, cursor: 'pointer', fontFamily: font.family,
+  },
+  deleteOverlay: {
+    position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 10,
   },
 };

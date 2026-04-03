@@ -3,7 +3,7 @@
  * Usa Google Identity Services (GIS) Token Model.
  *
  * El script de GIS se carga dinámicamente.
- * Token y user info persisten en sessionStorage.
+ * Token y user info persisten en localStorage.
  */
 
 import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from '../config/google.js';
@@ -14,9 +14,9 @@ let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
 
-// Restore from sessionStorage on load
+// Restore from localStorage on load
 try {
-  const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (saved && saved.token && saved.expiresAt > Date.now()) {
     accessToken = saved.token;
     tokenExpiresAt = saved.expiresAt;
@@ -24,7 +24,7 @@ try {
 } catch {}
 
 function persistSession(user) {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
     token: accessToken,
     expiresAt: tokenExpiresAt,
     user,
@@ -66,7 +66,7 @@ export async function initAuth() {
  */
 export function getSavedUser() {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved && saved.user && saved.expiresAt > Date.now()) {
       return saved.user;
     }
@@ -137,7 +137,7 @@ export function revokeToken() {
     accessToken = null;
     tokenExpiresAt = 0;
   }
-  sessionStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 /**

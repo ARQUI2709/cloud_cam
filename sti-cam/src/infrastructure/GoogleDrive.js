@@ -229,3 +229,18 @@ export async function listFiles(folderId) {
   const data = await res.json();
   return data.files || [];
 }
+
+/**
+ * Elimina un archivo de Google Drive.
+ * @param {string} fileId - ID del archivo
+ */
+export async function deleteFile(fileId) {
+  const headers = await authHeaders();
+  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Failed to delete file: ${res.status}`);
+  }
+}
