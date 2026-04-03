@@ -76,6 +76,7 @@ export default function HomeScreen({
   };
 
   const getFullUrl = (photo) => {
+    if (photo.thumbnailLink) return photo.thumbnailLink.replace(/=s\d+/, '=s1200');
     return `https://drive.google.com/thumbnail?id=${photo.id}&sz=w1200`;
   };
 
@@ -241,7 +242,7 @@ export default function HomeScreen({
                   const idx = photos.indexOf(photo);
                   return (
                     <div key={photo.id} onClick={() => setViewerIndex(idx)} style={styles.gridItem}>
-                      <img src={getThumbnailUrl(photo)} alt="" style={styles.gridImg} loading="lazy" />
+                      <img src={getThumbnailUrl(photo)} alt="" style={styles.gridImg} loading="lazy" referrerPolicy="no-referrer" />
                     </div>
                   );
                 })}
@@ -283,6 +284,7 @@ export default function HomeScreen({
               src={getFullUrl(photos[viewerIndex])}
               alt={photos[viewerIndex].name}
               style={styles.viewerImg}
+              referrerPolicy="no-referrer"
             />
             {viewerIndex < photos.length - 1 && (
               <button
