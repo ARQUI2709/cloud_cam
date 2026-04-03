@@ -8,6 +8,10 @@ import ProjectSelector from '../components/ProjectSelector';
 import UploadStatusBar from '../components/UploadStatusBar';
 import Footer from '../components/Footer';
 import cameraImg from '../assets/camera.png';
+import shareImg from '../assets/share.png';
+import infoImg from '../assets/info.png';
+import deleteImg from '../assets/delete.png';
+import logoutImg from '../assets/logout.png';
 
 const CamIconSmall = () => (
   <img src={cameraImg} alt="STI Cam" style={{ width: 36, height: 36, objectFit: 'contain' }} />
@@ -163,11 +167,7 @@ export default function HomeScreen({
             <span style={styles.driveDot} />Drive
           </div>
           <button onClick={() => setShowLogoutConfirm(true)} style={styles.logoutBtn} title="Cerrar sesión">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
+            <img src={logoutImg} alt="Logout" style={{ width: 20, height: 20, objectFit: 'contain', opacity: 0.8 }} />
           </button>
         </div>
       </div>
@@ -258,12 +258,7 @@ export default function HomeScreen({
           <div style={styles.viewerHeader}>
             <button onClick={() => setViewerIndex(null)} style={styles.viewerClose}>✕</button>
             <span style={styles.viewerCount}>{viewerIndex + 1} / {photos.length}</span>
-            <button
-              onClick={() => handleShare(photos[viewerIndex])}
-              style={styles.shareBtn}
-            >
-              {sharing ? '...' : copied ? '✓ Copiado' : 'Compartir'}
-            </button>
+            <div style={{ width: 38 }} />
           </div>
 
           <div
@@ -297,15 +292,14 @@ export default function HomeScreen({
           </div>
 
           <div style={styles.viewerFooter}>
-            <button
-              onClick={() => setConfirmDeletePhoto(true)}
-              style={styles.deletePhotoBtn}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-              </svg>
-              Eliminar
+            <button onClick={() => handleShare(photos[viewerIndex])} style={styles.actionBtn} title="Compartir">
+              <img src={shareImg} alt="Compartir" style={{ ...styles.actionIcon, opacity: (sharing || copied) ? 0.4 : 0.8 }} />
+            </button>
+            <button onClick={() => alert(`Nombre: ${photos[viewerIndex].name}\nFecha: ${new Date(photos[viewerIndex].createdTime).toLocaleString()}`)} style={styles.actionBtn} title="Información">
+              <img src={infoImg} alt="Info" style={styles.actionIcon} />
+            </button>
+            <button onClick={() => setConfirmDeletePhoto(true)} style={styles.actionBtn} title="Eliminar">
+              <img src={deleteImg} alt="Eliminar" style={styles.actionIcon} />
             </button>
           </div>
 
@@ -494,11 +488,12 @@ const styles = {
   viewerCount: {
     flex: 1, fontSize: font.sm, color: colors.textMuted, textAlign: 'center',
   },
-  shareBtn: {
-    padding: '8px 16px', borderRadius: radius.md, border: 'none',
-    background: colors.accent, color: 'white',
-    fontSize: font.sm, fontWeight: 600, cursor: 'pointer', fontFamily: font.family,
+  actionBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 44, height: 44, borderRadius: '50%', background: 'transparent',
+    border: 'none', cursor: 'pointer',
   },
+  actionIcon: { width: 24, height: 24, objectFit: 'contain', opacity: 0.8 },
   viewerBody: {
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative', overflow: 'hidden',
@@ -515,13 +510,8 @@ const styles = {
     backdropFilter: 'blur(4px)', zIndex: 2,
   },
   viewerFooter: {
-    padding: '10px 16px', textAlign: 'center', flexShrink: 0,
-  },
-  deletePhotoBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    padding: '8px 16px', borderRadius: radius.md, border: `1px solid ${colors.borderLight}`,
-    background: 'transparent', color: colors.textMuted,
-    fontSize: font.sm, cursor: 'pointer', fontFamily: font.family,
+    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 32,
+    padding: '16px', flexShrink: 0,
   },
   deleteOverlay: {
     position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
