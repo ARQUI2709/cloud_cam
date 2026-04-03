@@ -7,13 +7,10 @@ import { getAccessToken } from '../infrastructure/GoogleAuth';
 import ProjectSelector from '../components/ProjectSelector';
 import UploadStatusBar from '../components/UploadStatusBar';
 import Footer from '../components/Footer';
+import cameraImg from '../assets/camera.png';
 
 const CamIconSmall = () => (
-  <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
-    <rect x="4" y="14" width="40" height="28" rx="3" stroke={colors.accent} strokeWidth="2.5" fill="none"/>
-    <circle cx="24" cy="28" r="8" stroke={colors.accent} strokeWidth="2.5" fill="none"/>
-    <circle cx="24" cy="28" r="3" fill={colors.accent}/>
-  </svg>
+  <img src={cameraImg} alt="STI Cam" style={{ width: 24, height: 24, objectFit: 'contain' }} />
 );
 
 const CamIconLarge = () => (
@@ -52,6 +49,7 @@ export default function HomeScreen({
   const [viewerIndex, setViewerIndex] = useState(null);
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const touchStartX = useRef(0);
   const touchDelta = useRef(0);
 
@@ -145,11 +143,12 @@ export default function HomeScreen({
           <div style={styles.driveBadge}>
             <span style={styles.driveDot} />Drive
           </div>
-          <button onClick={onSignOut} style={styles.logoutBtn} title="Cerrar sesión">
-            {user?.picture
-              ? <img src={user.picture} alt="" style={styles.userAvatar} referrerPolicy="no-referrer" />
-              : <span style={styles.userInitial}>{(user?.name || user?.email || '?')[0].toUpperCase()}</span>
-            }
+          <button onClick={() => setShowLogoutConfirm(true)} style={styles.logoutBtn} title="Cerrar sesión">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
           </button>
         </div>
       </div>
@@ -284,6 +283,20 @@ export default function HomeScreen({
           </div>
         </div>
       )}
+      {/* Logout confirmation */}
+      {showLogoutConfirm && (
+        <div style={styles.logoutOverlay}>
+          <div style={styles.logoutDialog}>
+            <p style={styles.logoutText}>Cerrar sesion?</p>
+            <p style={styles.logoutSubtext}>{user?.email}</p>
+            <div style={styles.logoutActions}>
+              <button onClick={() => setShowLogoutConfirm(false)} style={styles.logoutCancel}>Cancelar</button>
+              <button onClick={() => { setShowLogoutConfirm(false); onSignOut(); }} style={styles.logoutConfirm}>Salir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   );
@@ -321,15 +334,38 @@ const styles = {
     background: colors.success, display: 'inline-block',
   },
   logoutBtn: {
-    width: 32, height: 32, borderRadius: '50%', border: `2px solid ${colors.borderLight}`,
-    background: colors.bgCard, cursor: 'pointer', padding: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    width: 32, height: 32, borderRadius: '50%', border: `1px solid ${colors.borderLight}`,
+    background: 'transparent', cursor: 'pointer', padding: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  userAvatar: {
-    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+  logoutOverlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 200, fontFamily: font.family,
   },
-  userInitial: {
-    fontSize: font.sm, fontWeight: 700, color: colors.textMuted,
+  logoutDialog: {
+    background: colors.bgCard, borderRadius: radius.lg, padding: '24px',
+    width: 280, textAlign: 'center',
+    border: `1px solid ${colors.borderLight}`,
+  },
+  logoutText: {
+    fontSize: font.lg, fontWeight: 600, color: colors.textWhite, margin: '0 0 4px',
+  },
+  logoutSubtext: {
+    fontSize: font.sm, color: colors.textDim, margin: '0 0 20px',
+  },
+  logoutActions: {
+    display: 'flex', gap: 10,
+  },
+  logoutCancel: {
+    flex: 1, padding: '10px', borderRadius: radius.md,
+    border: `1px solid ${colors.borderLight}`, background: 'transparent',
+    color: colors.text, fontSize: font.base, cursor: 'pointer', fontFamily: font.family,
+  },
+  logoutConfirm: {
+    flex: 1, padding: '10px', borderRadius: radius.md,
+    border: 'none', background: colors.error, color: 'white',
+    fontSize: font.base, fontWeight: 600, cursor: 'pointer', fontFamily: font.family,
   },
   section: { padding: `${spacing.lg}px ${spacing.xl}px` },
   label: {

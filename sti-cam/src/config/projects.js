@@ -38,6 +38,10 @@ async function getRootFolderId() {
   const res = await fetch(`${DRIVE_API}/files?q=${q}&fields=files(id)`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (!res.ok) {
+    console.error('[projects] getRootFolderId failed:', res.status, await res.text());
+    return null;
+  }
   const data = await res.json();
   return data.files?.[0]?.id || null;
 }
@@ -54,6 +58,10 @@ async function findProjectsFile(rootId) {
   const res = await fetch(`${DRIVE_API}/files?q=${q}&fields=files(id)`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (!res.ok) {
+    console.error('[projects] findProjectsFile failed:', res.status, await res.text());
+    return null;
+  }
   const data = await res.json();
   projectsFileId = data.files?.[0]?.id || null;
   return projectsFileId;
@@ -69,7 +77,7 @@ async function saveProjectsToDrive(projects, rootId) {
 
   if (fileId) {
     // Update existing file
-    await fetch(`${UPLOAD_API}/files/${fileId}?uploadType=media`, {
+    const updateRes = await fetch(`${UPLOAD_API}/files/${fileId}?uploadType=media`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -77,6 +85,7 @@ async function saveProjectsToDrive(projects, rootId) {
       },
       body: content,
     });
+    if (!updateRes.ok) console.error('[projects] update failed:', updateRes.status, await updateRes.text());
   } else {
     // Create new file
     const boundary = '---sti_projects_' + Date.now();
@@ -157,8 +166,8 @@ async function syncProjectsToDrive(projects) {
       rootId = data.id;
     }
     await saveProjectsToDrive(projects, rootId);
-  } catch {
-    // Silently fail — localStorage still has the data
+  } catch (e) {
+    console.error('[projects] syncProjectsToDrive error:', e);
   }
 }
 
@@ -170,7 +179,10 @@ async function syncProjectsToDrive(projects) {
 export async function syncProjectsFromDrive() {
   try {
     const rootId = await getRootFolderId();
-    if (!rootId) return loadProjects();
+    if (!rootId) {
+      console.log('[projects] No STI-Fotos folder on Drive yet');
+      return loadProjects();
+    }
 
     const fileId = await findProjectsFile(rootId);
     if (!fileId) {
@@ -187,7 +199,12 @@ export async function syncProjectsFromDrive() {
     const res = await fetch(`${DRIVE_API}/files/${fileId}?alt=media`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (!res.ok) {
+      console.error('[projects] download failed:', res.status, await res.text());
+      return loadProjects();
+    }
     const remote = await res.json();
+    console.log('[projects] Synced from Drive:', remote.length, 'projects');
 
     // Merge: use remote as base, add any local-only projects
     const local = loadProjects();
@@ -206,7 +223,8 @@ export async function syncProjectsFromDrive() {
     }
 
     return merged;
-  } catch {
+  } catch (e) {
+    console.error('[projects] syncProjectsFromDrive error:', e);
     return loadProjects();
   }
 }

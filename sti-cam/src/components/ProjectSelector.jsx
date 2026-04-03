@@ -21,7 +21,7 @@ export default function ProjectSelector({ selected, onSelect }) {
   useEffect(() => {
     syncProjectsFromDrive()
       .then((merged) => { setProjects(merged); })
-      .catch(() => {})
+      .catch((e) => { console.error('[ProjectSelector] sync failed:', e); })
       .finally(() => setSyncing(false));
   }, []);
 
