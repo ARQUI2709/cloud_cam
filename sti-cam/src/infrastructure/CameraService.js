@@ -10,6 +10,10 @@ const ASPECT_RATIOS = {
   'full': null,
 };
 
+// Module-level cached stream — reused across CameraService instances
+// so the browser doesn't re-prompt for camera permission each time.
+let cachedStream = null;
+
 export class CameraService {
   constructor() {
     this.stream = null;
@@ -26,16 +30,27 @@ export class CameraService {
   async start(videoEl) {
     this.videoElement = videoEl;
 
-    const constraints = {
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 3840 },
-        height: { ideal: 2160 },
-      },
-      audio: false,
-    };
+    // Reuse cached stream if it's still active (tracks not ended)
+    const canReuse = cachedStream &&
+      cachedStream.getVideoTracks().length > 0 &&
+      cachedStream.getVideoTracks()[0].readyState === 'live';
 
-    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (canReuse) {
+      this.stream = cachedStream;
+    } else {
+      const constraints = {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+        },
+        audio: false,
+      };
+
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      cachedStream = this.stream;
+    }
+
     videoEl.srcObject = this.stream;
 
     return new Promise((resolve) => {
@@ -160,15 +175,25 @@ export class CameraService {
 
   /**
    * Detiene la cámara y libera recursos.
+   * The stream is kept alive (cached) so re-opening the camera
+   * doesn't trigger a new permission prompt on mobile browsers.
    */
   stop() {
-    if (this.stream) {
-      this.stream.getTracks().forEach((t) => t.stop());
-      this.stream = null;
-    }
     if (this.videoElement) {
       this.videoElement.srcObject = null;
       this.videoElement = null;
+    }
+    this.stream = null;
+  }
+
+  /**
+   * Fully releases the camera stream and clears the cache.
+   * Call this only when the user logs out or the app is closing.
+   */
+  static release() {
+    if (cachedStream) {
+      cachedStream.getTracks().forEach((t) => t.stop());
+      cachedStream = null;
     }
   }
 }

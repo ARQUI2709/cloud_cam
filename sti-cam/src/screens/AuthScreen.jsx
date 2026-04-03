@@ -10,20 +10,16 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const CamIcon = () => (
-  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-    <rect x="4" y="14" width="40" height="28" rx="3" stroke={colors.accent} strokeWidth="2.5" fill="none"/>
-    <circle cx="24" cy="28" r="8" stroke={colors.accent} strokeWidth="2.5" fill="none"/>
-    <circle cx="24" cy="28" r="3" fill={colors.accent}/>
-    <rect x="14" y="8" width="20" height="6" rx="2" stroke={colors.accent} strokeWidth="2" fill="none"/>
-    <circle cx="36" cy="20" r="2" fill={colors.accent}/>
-  </svg>
-);
+import logoImg from '../assets/camera.png';
+import cloudImg from '../assets/cloud.png';
+import lensImg from '../assets/lens.png';
+import imagesImg from '../assets/images.png';
+import Footer from '../components/Footer';
 
 const FEATURES = [
-  'Fotos directo a Google Drive',
-  'Captura instantánea — sin confirmación',
-  'Modo continuo — tap, tap, tap',
+  { text: 'Fotos directo a Google Drive', icon: cloudImg },
+  { text: 'Captura instantánea — sin confirmación', icon: lensImg },
+  { text: 'Modo continuo — tap, tap, tap', icon: imagesImg },
 ];
 
 export default function AuthScreen({ onSignIn }) {
@@ -43,7 +39,7 @@ export default function AuthScreen({ onSignIn }) {
         transition: 'all 0.6s ease',
       }}>
         <div style={styles.logoWrap}>
-          <div style={styles.logoBox}><CamIcon /></div>
+          <img src={logoImg} alt="STI Cam Logo" style={styles.logoImg} />
           <h1 style={styles.title}>STI Cam</h1>
           <p style={styles.subtitle}>Registro fotográfico de obra</p>
         </div>
@@ -51,8 +47,8 @@ export default function AuthScreen({ onSignIn }) {
         <div style={styles.features}>
           {FEATURES.map((f, i) => (
             <div key={i} style={styles.featureRow}>
-              <span style={styles.check}>✓</span>
-              <span style={styles.featureText}>{f}</span>
+              <img src={f.icon} alt="" style={styles.featureIcon} />
+              <span style={styles.featureText}>{f.text}</span>
             </div>
           ))}
         </div>
@@ -62,29 +58,29 @@ export default function AuthScreen({ onSignIn }) {
           <span>Iniciar sesión con Google</span>
         </button>
 
-        <p style={styles.note}>Se requiere acceso a Google Drive para guardar las fotos</p>
+        <p style={styles.note}>Se requiere acceso a Google Drive para guardar y organizar tus fotos.</p>
       </div>
+      <Footer />
     </div>
   );
 }
 
 const styles = {
   container: {
-    fontFamily: font.family, background: colors.bg,
+    fontFamily: font.family, background: '#17191e',
     minHeight: '100dvh', color: colors.text,
     maxWidth: 480, margin: '0 auto',
+    display: 'flex', flexDirection: 'column',
   },
   inner: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    justifyContent: 'center', minHeight: '100dvh',
+    justifyContent: 'center', flex: 1,
     padding: `${spacing.xxxl}px ${spacing.xxl}px`, gap: spacing.xxxl,
   },
   logoWrap: { textAlign: 'center' },
-  logoBox: {
-    width: 80, height: 80, borderRadius: radius.xl + 8,
-    background: colors.accentLight, border: `1px solid ${colors.accentGlow}`,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    margin: '0 auto 16px',
+  logoImg: {
+    width: 104, height: 104, objectFit: 'contain',
+    margin: '0 auto 16px', display: 'block',
   },
   title: {
     fontSize: font.title, fontWeight: 700, color: colors.textWhite,
@@ -96,7 +92,7 @@ const styles = {
     width: '100%', maxWidth: 280,
   },
   featureRow: { display: 'flex', alignItems: 'center', gap: spacing.sm + 2 },
-  check: { color: colors.accent, fontWeight: 700, fontSize: font.lg },
+  featureIcon: { width: 22, height: 22, objectFit: 'contain' },
   featureText: { fontSize: font.base, color: colors.text },
   btn: {
     display: 'flex', alignItems: 'center', gap: spacing.sm + 2,

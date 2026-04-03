@@ -6,6 +6,7 @@ import { getProject } from '../config/projects';
 import AspectPicker from '../components/AspectPicker';
 import ShutterButton from '../components/ShutterButton';
 import UploadQueueSheet from '../components/UploadQueueSheet';
+import Footer from '../components/Footer';
 import { colors, font, radius, globalStyles } from '../styles/theme';
 
 const ASPECTS = ['4:3', '16:9', '1:1', 'full'];
@@ -136,6 +137,7 @@ export default function CameraScreen({
           <p style={{ color: colors.textMuted, fontSize: 13 }}>Iniciando cámara...</p>
         </div>
       )}
+      <Footer styleContent={{ position: 'absolute', bottom: 0, padding: '8px 16px', zIndex: 30 }} />
     </div>
   );
 }
@@ -165,7 +167,7 @@ const styles = {
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
     display: 'flex', alignItems: 'center', gap: 10,
-    padding: '52px 16px 12px',
+    padding: 'max(52px, calc(env(safe-area-inset-top, 0px) + 12px)) 16px 12px',
     background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)',
   },
   closeBtn: {

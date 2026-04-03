@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { getProjects, addProject, removeProject } from '../config/projects';
+import { useState, useEffect } from 'react';
+import { getProjects, addProject, removeProject, syncProjectsFromDrive } from '../config/projects';
 import { colors, font, radius } from '../styles/theme';
 
 const ICONS = ['🏗️', '🏥', '🏢', '🏘️', '🏊', '🏫', '🏭', '🏠', '🏰', '🏟️', '🏬', '🏛️'];
@@ -11,10 +11,19 @@ export default function ProjectSelector({ selected, onSelect }) {
   const [newName, setNewName] = useState('');
   const [newIcon, setNewIcon] = useState(ICONS[0]);
   const [projects, setProjects] = useState(() => getProjects());
+  const [syncing, setSyncing] = useState(true);
 
   const current = projects.find((p) => p.id === selected);
 
   const refreshProjects = () => setProjects(getProjects());
+
+  // Sync from Drive on mount
+  useEffect(() => {
+    syncProjectsFromDrive()
+      .then((merged) => { setProjects(merged); })
+      .catch(() => {})
+      .finally(() => setSyncing(false));
+  }, []);
 
   const handleCreate = () => {
     const trimmed = newName.trim();
@@ -38,7 +47,9 @@ export default function ProjectSelector({ selected, onSelect }) {
   return (
     <div>
       <button onClick={() => { setOpen(!open); setCreating(false); setConfirmDelete(null); }} style={styles.selector}>
-        {current ? (
+        {syncing ? (
+          <span style={{ color: colors.textMuted }}>Sincronizando...</span>
+        ) : current ? (
           <span>{current.icon} {current.name}</span>
         ) : (
           <span style={{ color: colors.textMuted }}>Seleccionar proyecto...</span>

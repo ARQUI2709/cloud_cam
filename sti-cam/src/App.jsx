@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { CameraService } from './infrastructure/CameraService';
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import CameraScreen from './screens/CameraScreen';
@@ -47,7 +48,7 @@ export default function App() {
       queue={queue}
       sessionCount={sessionCount}
       onOpenCamera={() => setActiveScreen('camera')}
-      onSignOut={auth.signOut}
+      onSignOut={() => { CameraService.release(); auth.signOut(); }}
     />
   );
 }

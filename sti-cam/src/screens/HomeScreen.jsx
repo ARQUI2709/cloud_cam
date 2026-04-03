@@ -6,6 +6,7 @@ import { GOOGLE_CLIENT_ID } from '../config/google';
 import { getAccessToken } from '../infrastructure/GoogleAuth';
 import ProjectSelector from '../components/ProjectSelector';
 import UploadStatusBar from '../components/UploadStatusBar';
+import Footer from '../components/Footer';
 
 const CamIconSmall = () => (
   <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
@@ -40,7 +41,7 @@ function groupByDate(photos) {
 
 export default function HomeScreen({
   user, selectedProject, onSelectProject,
-  queue, sessionCount, onOpenCamera,
+  queue, sessionCount, onOpenCamera, onSignOut,
 }) {
   const project = selectedProject ? getProjectById(selectedProject) : null;
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
@@ -88,14 +89,14 @@ export default function HomeScreen({
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const blob = await res.blob();
-      const file = new File([blob], photo.name || 'foto.jpg', { type: 'image/jpeg' });
+      const file = new File([blob], 'foto.jpg', { type: 'image/jpeg' });
 
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: photo.name });
+        await navigator.share({ files: [file] });
       } else if (navigator.share) {
         // Fallback: share link if file sharing not supported
         const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
-        await navigator.share({ title: photo.name, url: shareUrl });
+        await navigator.share({ url: shareUrl });
       } else {
         const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
         await navigator.clipboard.writeText(shareUrl);
@@ -144,6 +145,12 @@ export default function HomeScreen({
           <div style={styles.driveBadge}>
             <span style={styles.driveDot} />Drive
           </div>
+          <button onClick={onSignOut} style={styles.logoutBtn} title="Cerrar sesión">
+            {user?.picture
+              ? <img src={user.picture} alt="" style={styles.userAvatar} referrerPolicy="no-referrer" />
+              : <span style={styles.userInitial}>{(user?.name || user?.email || '?')[0].toUpperCase()}</span>
+            }
+          </button>
         </div>
       </div>
 
@@ -277,6 +284,7 @@ export default function HomeScreen({
           </div>
         </div>
       )}
+      <Footer />
     </div>
   );
 }
@@ -291,6 +299,7 @@ const styles = {
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: `${spacing.lg - 2}px ${spacing.xl}px`,
+    paddingTop: `max(${spacing.lg - 2}px, env(safe-area-inset-top, 0px))`,
     borderBottom: `1px solid ${colors.border}`,
     position: 'sticky', top: 0, background: colors.bg, zIndex: 10,
   },
@@ -310,6 +319,17 @@ const styles = {
   driveDot: {
     width: 6, height: 6, borderRadius: '50%',
     background: colors.success, display: 'inline-block',
+  },
+  logoutBtn: {
+    width: 32, height: 32, borderRadius: '50%', border: `2px solid ${colors.borderLight}`,
+    background: colors.bgCard, cursor: 'pointer', padding: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  userAvatar: {
+    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+  },
+  userInitial: {
+    fontSize: font.sm, fontWeight: 700, color: colors.textMuted,
   },
   section: { padding: `${spacing.lg}px ${spacing.xl}px` },
   label: {
@@ -381,7 +401,8 @@ const styles = {
   },
   viewerHeader: {
     display: 'flex', alignItems: 'center', gap: 10,
-    padding: '14px 16px', flexShrink: 0,
+    padding: '14px 16px', paddingTop: 'max(14px, env(safe-area-inset-top, 0px))',
+    flexShrink: 0,
   },
   viewerClose: {
     background: 'none', border: 'none', color: 'white',
