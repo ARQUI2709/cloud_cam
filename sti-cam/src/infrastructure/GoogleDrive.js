@@ -92,13 +92,17 @@ export async function getProjectFolderId(projectName) {
  * @param {function} params.onProgress - Callback de progreso (0-1)
  * @returns {string} file ID del archivo subido
  */
-export async function uploadFile({ blob, fileName, folderId, mimeType = 'image/jpeg', onProgress }) {
+export async function uploadFile({ blob, fileName, folderId, mimeType = 'image/jpeg', createdAt, onProgress }) {
   const token = await getAccessToken();
 
   const metadata = {
     name: fileName,
     mimeType,
     parents: [folderId],
+    ...(createdAt && {
+      createdTime: new Date(createdAt).toISOString(),
+      modifiedTime: new Date(createdAt).toISOString(),
+    }),
   };
 
   // Usar multipart upload para archivos < 5MB, resumable para mayores

@@ -36,7 +36,11 @@ export default function CameraScreen({
   useEffect(() => {
     if (videoRef.current) {
       camera.start(videoRef.current).then((zoomCaps) => {
-        if (zoomCaps) setZoomRange(zoomCaps);
+        if (zoomCaps) {
+          setZoomRange(zoomCaps);
+          setZoom(1);
+          camera.setZoom(1);
+        }
       });
     }
     return () => camera.stop();
@@ -289,13 +293,13 @@ const styles = {
   },
   iconBtn: {
     width: '100%', height: '100%', borderRadius: '50%',
-    background: 'rgba(255,255,255,0.18)', border: 'none',
+    background: 'none', border: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer', backdropFilter: 'blur(8px)',
+    cursor: 'pointer',
   },
   iconImg: {
-    width: 28, height: 28, objectFit: 'contain',
-    filter: 'brightness(0) invert(1)',
+    width: 44, height: 44, objectFit: 'contain',
+    borderRadius: '30%', overflow: 'hidden',
   },
   lastThumb: {
     position: 'absolute', inset: 0,

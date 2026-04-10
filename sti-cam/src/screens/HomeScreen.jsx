@@ -50,6 +50,7 @@ export default function HomeScreen({
 
   const [photos, setPhotos] = useState([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [viewerIndex, setViewerIndex] = useState(null);
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -73,7 +74,7 @@ export default function HomeScreen({
       .catch(() => { if (!cancelled) setPhotos([]); })
       .finally(() => { if (!cancelled) setLoadingPhotos(false); });
     return () => { cancelled = true; };
-  }, [selectedProject]);
+  }, [selectedProject, refreshTick]);
 
   const getThumbnailUrl = (photo) => {
     if (photo.thumbnailLink) return photo.thumbnailLink.replace(/=s\d+/, '=s400');
@@ -171,11 +172,12 @@ export default function HomeScreen({
           <span style={styles.headerTitle}>STI Cam</span>
         </div>
         <div style={styles.headerRight}>
-          {sessionCount > 0 && (
-            <span style={styles.countBadge}>{sessionCount}</span>
+          {uploadingCount > 0 && (
+            <span style={styles.countBadge}>{uploadingCount}</span>
           )}
           <div style={styles.driveBadge}>
-            <span style={styles.driveDot} />Drive
+            <span style={{ ...styles.driveDot, background: (user && GOOGLE_CLIENT_ID) ? colors.success : colors.error }} />
+            Drive
           </div>
           <button onClick={() => setShowLogoutConfirm(true)} style={styles.logoutBtn} title="Cerrar sesión">
             <img src={logoutImg} alt="Logout" style={{ width: 20, height: 20, objectFit: 'contain', opacity: 0.8 }} />
@@ -230,9 +232,19 @@ export default function HomeScreen({
         <div style={styles.gallerySection}>
           <div style={styles.gallerySectionHeader}>
             <label style={styles.label}>FOTOS DEL PROYECTO</label>
-            {photos.length > 0 && (
-              <span style={styles.photoCount}>{photos.length} fotos</span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {photos.length > 0 && (
+                <span style={styles.photoCount}>{photos.length} fotos</span>
+              )}
+              <button
+                onClick={() => setRefreshTick((t) => t + 1)}
+                disabled={loadingPhotos}
+                style={styles.refreshBtn}
+                title="Actualizar galería"
+              >
+                {loadingPhotos ? '...' : '↻'}
+              </button>
+            </div>
           </div>
 
           {loadingPhotos && (
@@ -476,6 +488,13 @@ const styles = {
     padding: `0 ${spacing.xl}px ${spacing.sm}px`,
   },
   photoCount: { fontSize: font.sm, color: colors.textDim },
+  refreshBtn: {
+    background: 'transparent', border: `1px solid ${colors.borderLight}`,
+    color: colors.textMuted, borderRadius: '50%',
+    width: 28, height: 28, fontSize: 16, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    lineHeight: 1,
+  },
   galleryLoading: {
     display: 'flex', justifyContent: 'center', padding: spacing.xxl,
   },

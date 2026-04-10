@@ -37,6 +37,7 @@ export class UploadManager {
         fileName: photo.fileName,
         folderId,
         mimeType: 'image/jpeg',
+        createdAt: photo.createdAt,
         onProgress: (progress) => {
           this.onUpdate(photo.id, { progress: Math.round(progress * 90) + 10 });
         },
