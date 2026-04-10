@@ -17,7 +17,8 @@
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 export const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',  // Solo archivos creados por la app
+  'https://www.googleapis.com/auth/drive.file',        // Drive files created by the app
+  'https://www.googleapis.com/auth/spreadsheets',      // Create & update Sheets
 ].join(' ');
 
 export const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';

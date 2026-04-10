@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react';
 import { UploadManager } from '../domain/UploadManager';
 import { uploadFile, getProjectFolderId } from '../infrastructure/GoogleDrive';
+import { getOrCreateSheet, appendPhotoRow } from '../infrastructure/GoogleSheets';
 import { getProject } from '../config/projects';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 
@@ -15,6 +16,7 @@ export function useUploadQueue({ updateQueueItem }) {
     if (!managerRef.current) {
       managerRef.current = new UploadManager({
         driveService: { uploadFile },
+        sheetsService: { getOrCreateSheet, appendPhotoRow },
         onUpdate: updateQueueItem,
       });
     }
@@ -54,7 +56,7 @@ export function useUploadQueue({ updateQueueItem }) {
         folderCacheRef.current.set(photo.projectId, folderId);
       }
 
-      getManager().enqueue(photo, folderId);
+      getManager().enqueue(photo, folderId, project.name);
     } catch (err) {
       updateQueueItem(photo.id, { status: 'error', error: err.message });
     }

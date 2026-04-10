@@ -6,8 +6,9 @@
 const MAX_CONCURRENT = 2;
 
 export class UploadManager {
-  constructor({ driveService, onUpdate }) {
+  constructor({ driveService, sheetsService, onUpdate }) {
     this.driveService = driveService;
+    this.sheetsService = sheetsService;  // { getOrCreateSheet, appendPhotoRow }
     this.onUpdate = onUpdate; // (id, updates) => void
     this.active = 0;
     this.waiting = [];
@@ -17,9 +18,10 @@ export class UploadManager {
    * Encola una foto para subir.
    * @param {object} photo - Entidad Photo
    * @param {string} folderId - ID de carpeta destino en Drive
+   * @param {string} projectName - Nombre del proyecto (para la hoja)
    */
-  enqueue(photo, folderId) {
-    this.waiting.push({ photo, folderId });
+  enqueue(photo, folderId, projectName) {
+    this.waiting.push({ photo, folderId, projectName });
     this._processNext();
   }
 
@@ -27,7 +29,7 @@ export class UploadManager {
     if (this.active >= MAX_CONCURRENT || this.waiting.length === 0) return;
 
     this.active++;
-    const { photo, folderId } = this.waiting.shift();
+    const { photo, folderId, projectName } = this.waiting.shift();
 
     this.onUpdate(photo.id, { status: 'uploading', progress: 10 });
 
@@ -50,6 +52,16 @@ export class UploadManager {
         progress: 100,
         driveFileId: fileId,
       });
+
+      // Update project sheet
+      if (this.sheetsService && projectName) {
+        try {
+          const spreadsheetId = await this.sheetsService.getOrCreateSheet(projectName, folderId);
+          await this.sheetsService.appendPhotoRow(spreadsheetId, { ...photo, driveFileId: fileId });
+        } catch (sheetErr) {
+          console.warn('Sheet update failed (non-critical):', sheetErr);
+        }
+      }
     } catch (err) {
       console.error(`Upload failed for ${photo.fileName}:`, err);
       this.onUpdate(photo.id, {

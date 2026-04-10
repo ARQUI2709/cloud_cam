@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 import { getProject as getProjectById } from '../config/projects';
 import { getProjectFolderId, listFiles, deleteFile } from '../infrastructure/GoogleDrive';
+import { getOrCreateSheet, removePhotoRow } from '../infrastructure/GoogleSheets';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 import { getAccessToken } from '../infrastructure/GoogleAuth';
 import ProjectSelector from '../components/ProjectSelector';
@@ -125,6 +126,17 @@ export default function HomeScreen({
         setViewerIndex(photos.length > 1 ? photos.length - 2 : null);
       }
       setConfirmDeletePhoto(false);
+
+      // Remove row from project sheet (non-critical)
+      if (project) {
+        try {
+          const folderId = await getProjectFolderId(project.name);
+          const spreadsheetId = await getOrCreateSheet(project.name, folderId);
+          await removePhotoRow(spreadsheetId, photo.id);
+        } catch (sheetErr) {
+          console.warn('Sheet row removal failed (non-critical):', sheetErr);
+        }
+      }
     } catch (e) {
       console.error('[gallery] delete failed:', e);
     }
@@ -688,8 +700,8 @@ const styles = {
   },
   // Info panel
   infoOverlay: {
-    position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)',
-    display: 'flex', alignItems: 'flex-end', zIndex: 20,
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+    display: 'flex', alignItems: 'flex-end', zIndex: 200,
   },
   infoSheet: {
     width: '100%', background: colors.bgCard,

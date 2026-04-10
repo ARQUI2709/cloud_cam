@@ -232,16 +232,20 @@ export async function listFiles(folderId) {
   const q = encodeURIComponent(
     `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`
   );
-  const fields = 'files(id,name,thumbnailLink,webViewLink,createdTime,size,imageMediaMetadata,properties)';
-  const res = await fetch(
-    `${DRIVE_API}/files?q=${q}&fields=${fields}&orderBy=createdTime desc&pageSize=100`,
-    { headers }
-  );
-  if (!res.ok) {
-    throw new Error(`Failed to list files: ${res.status}`);
-  }
-  const data = await res.json();
-  return data.files || [];
+  const fields = `nextPageToken,files(id,name,thumbnailLink,webViewLink,createdTime,size,imageMediaMetadata,properties)`;
+  const all = [];
+  let pageToken = null;
+
+  do {
+    const url = `${DRIVE_API}/files?q=${q}&fields=${fields}&orderBy=createdTime desc&pageSize=1000${pageToken ? `&pageToken=${pageToken}` : ''}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Failed to list files: ${res.status}`);
+    const data = await res.json();
+    all.push(...(data.files || []));
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  return all;
 }
 
 /**
