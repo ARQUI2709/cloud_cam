@@ -8,7 +8,7 @@
  *   E: File ID (oculto, usado para localizar filas al eliminar)
  */
 
-import { getAccessToken } from './GoogleAuth.js';
+import { getAccessToken, clearToken } from './GoogleAuth.js';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DRIVE_API  = 'https://www.googleapis.com/drive/v3';
@@ -16,12 +16,11 @@ const DRIVE_API  = 'https://www.googleapis.com/drive/v3';
 // Cache: projectName → spreadsheetId
 const sheetCache = new Map();
 
-async function authHeaders() {
+async function authHeaders(includeContentType = true) {
   const token = await getAccessToken();
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+  const h = { Authorization: `Bearer ${token}` };
+  if (includeContentType) h['Content-Type'] = 'application/json';
+  return h;
 }
 
 /**
@@ -50,7 +49,7 @@ export async function getOrCreateSheet(projectName, folderId) {
   }
 
   // Create new spreadsheet
-  const createRes = await fetch(SHEETS_API, {
+  let createRes = await fetch(SHEETS_API, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -60,15 +59,39 @@ export async function getOrCreateSheet(projectName, folderId) {
       }],
     }),
   });
+  // If 401/403, the cached token lacks the spreadsheets scope — force re-auth and retry once
+  if (createRes.status === 401 || createRes.status === 403) {
+    clearToken();
+    const retryHeaders = await authHeaders();
+    createRes = await fetch(SHEETS_API, {
+      method: 'POST',
+      headers: retryHeaders,
+      body: JSON.stringify({
+        properties: { title: sheetName },
+        sheets: [{
+          properties: { title: 'Fotos', gridProperties: { frozenRowCount: 1 } },
+        }],
+      }),
+    });
+  }
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => ({}));
+    throw new Error(`Sheets create failed (${createRes.status}): ${err?.error?.message || 'check OAuth scopes'}`);
+  }
   const sheet = await createRes.json();
   const spreadsheetId = sheet.spreadsheetId;
+  if (!spreadsheetId) throw new Error('Sheets API returned no spreadsheetId');
 
-  // Move into the project folder
-  const fileRes = await fetch(`${DRIVE_API}/files/${spreadsheetId}?addParents=${folderId}&fields=id`, {
-    method: 'PATCH',
-    headers,
-  });
-  await fileRes.json();
+  // Move into the project folder (auth header only, no Content-Type)
+  const driveHeaders = await authHeaders(false);
+  const fileRes = await fetch(
+    `${DRIVE_API}/files/${spreadsheetId}?addParents=${folderId}&removeParents=root&fields=id`,
+    { method: 'PATCH', headers: driveHeaders }
+  );
+  if (!fileRes.ok) {
+    const err = await fileRes.json().catch(() => ({}));
+    console.warn('Sheet folder move failed:', err?.error?.message);
+  }
 
   // Write header row
   await _writeHeader(spreadsheetId, headers);

@@ -129,6 +129,21 @@ export async function getAccessToken() {
 }
 
 /**
+ * Invalida el token en memoria y en localStorage, forzando re-auth en la próxima llamada.
+ * Útil cuando una API retorna 401/403 por scopes insuficientes.
+ */
+export function clearToken() {
+  accessToken = null;
+  tokenExpiresAt = 0;
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, token: null, expiresAt: 0 }));
+    }
+  } catch {}
+}
+
+/**
  * Revoca el token y cierra sesión.
  */
 export function revokeToken() {
