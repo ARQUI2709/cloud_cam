@@ -31,7 +31,15 @@ export default function CameraScreen({
 
   const projectInfo = getProject(project);
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
+  const pendingCount = queue.filter((q) => q.status === 'pending').length;
   const doneCount = queue.filter((q) => q.status === 'done').length;
+
+  // Clear thumbnail once all uploads are settled
+  useEffect(() => {
+    if (lastThumb && uploadingCount === 0 && pendingCount === 0 && queue.length > 0) {
+      setLastThumb(null);
+    }
+  }, [uploadingCount, pendingCount, queue.length]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -135,9 +143,6 @@ export default function CameraScreen({
         <div style={styles.projectBadge}>
           {projectInfo?.icon} {projectInfo?.name}
         </div>
-        {sessionCount > 0 && (
-          <div style={styles.countBadge}>{sessionCount}</div>
-        )}
       </div>
 
       <AspectPicker aspects={ASPECTS} selected={aspect} onChange={setAspect} />
@@ -259,12 +264,6 @@ const styles = {
     flex: 1, fontSize: 13, color: 'white', fontWeight: 500,
     background: 'rgba(255,255,255,0.1)', padding: '6px 12px',
     borderRadius: radius.md, backdropFilter: 'blur(8px)', textAlign: 'center',
-  },
-  countBadge: {
-    minWidth: 28, height: 28, borderRadius: 14,
-    background: colors.accent, color: 'white',
-    fontSize: 13, fontWeight: 700,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px',
   },
   // Zoom bar sits above the bottom controls
   zoomBar: {

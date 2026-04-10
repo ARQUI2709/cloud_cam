@@ -57,6 +57,7 @@ export default function HomeScreen({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeletePhoto, setConfirmDeletePhoto] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const touchStartX = useRef(0);
   const touchDelta = useRef(0);
   const thumbStripRef = useRef(null);
@@ -341,13 +342,74 @@ export default function HomeScreen({
             <button onClick={() => handleShare(photos[viewerIndex])} style={styles.actionBtn} title="Compartir">
               <img src={shareImg} alt="Compartir" style={{ ...styles.actionIcon, opacity: (sharing || copied) ? 0.4 : 0.8 }} />
             </button>
-            <button onClick={() => alert(`Nombre: ${photos[viewerIndex].name}\nFecha: ${new Date(photos[viewerIndex].createdTime).toLocaleString()}`)} style={styles.actionBtn} title="Informacion">
+            <button onClick={() => setShowInfo(true)} style={styles.actionBtn} title="Informacion">
               <img src={infoImg} alt="Info" style={styles.actionIcon} />
             </button>
             <button onClick={() => setConfirmDeletePhoto(true)} style={styles.actionBtn} title="Eliminar">
               <img src={deleteImg} alt="Eliminar" style={styles.actionIcon} />
             </button>
           </div>
+
+          {/* Info panel */}
+          {showInfo && photos[viewerIndex] && (() => {
+            const p = photos[viewerIndex];
+            const m = p.imageMediaMetadata || {};
+            const loc = m.location;
+            const sizeKB = p.size ? (p.size / 1024).toFixed(0) : null;
+            const sizeMB = p.size && p.size > 1024 * 1024 ? (p.size / 1024 / 1024).toFixed(1) + ' MB' : sizeKB ? sizeKB + ' KB' : null;
+            const rows = [
+              m.cameraModel && { label: 'Cámara', value: m.cameraModel },
+              m.lens && { label: 'Lente', value: m.lens },
+              (m.width && m.height) && { label: 'Resolución', value: `${m.width} × ${m.height}` },
+              sizeMB && { label: 'Tamaño', value: sizeMB },
+              m.isoSpeed && { label: 'ISO', value: m.isoSpeed },
+              m.focalLength && { label: 'Focal', value: `${m.focalLength} mm` },
+              m.aperture && { label: 'Apertura', value: `ƒ${m.aperture}` },
+              m.exposureTime && { label: 'Obturador', value: `1/${Math.round(1 / m.exposureTime)} s` },
+            ].filter(Boolean);
+
+            return (
+              <div style={styles.infoOverlay} onClick={() => setShowInfo(false)}>
+                <div style={styles.infoSheet} onClick={(e) => e.stopPropagation()}>
+                  <div style={styles.infoHandle} />
+
+                  {/* Date & filename */}
+                  <p style={styles.infoDate}>
+                    {new Date(p.createdTime).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    {' · '}
+                    {new Date(p.createdTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  <p style={styles.infoFilename}>{p.name}</p>
+
+                  {/* EXIF table */}
+                  {rows.length > 0 && (
+                    <div style={styles.infoCard}>
+                      {rows.map(({ label, value }, i) => (
+                        <div key={label} style={{ ...styles.infoRow, ...(i < rows.length - 1 ? styles.infoRowBorder : {}) }}>
+                          <span style={styles.infoLabel}>{label}</span>
+                          <span style={styles.infoValue}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Map */}
+                  {loc && (
+                    <div style={styles.infoCard}>
+                      <div style={styles.infoMapPlaceholder}>
+                        <span style={styles.infoMapPin}>📍</span>
+                        <span style={styles.infoMapCoords}>
+                          {loc.latitude.toFixed(5)}, {loc.longitude.toFixed(5)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={() => setShowInfo(false)} style={styles.infoCloseBtn}>Cerrar</button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Delete confirmation */}
           {confirmDeletePhoto && (
@@ -583,10 +645,10 @@ const styles = {
   },
   actionBtn: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 72, height: 72, borderRadius: '50%', background: 'transparent',
-    border: 'none', cursor: 'pointer',
+    width: 56, height: 56, borderRadius: 20, background: 'rgba(255,255,255,0.06)',
+    border: 'none', cursor: 'pointer', overflow: 'hidden', padding: 0,
   },
-  actionIcon: { width: 60, height: 60, objectFit: 'contain', opacity: 0.8 },
+  actionIcon: { width: 56, height: 56, objectFit: 'cover', opacity: 0.8, display: 'block' },
   viewerFooter: {
     display: 'flex', justifyContent: 'space-around', alignItems: 'center',
     padding: '12px 0',
@@ -597,5 +659,60 @@ const styles = {
     position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     zIndex: 10,
+  },
+  // Info panel
+  infoOverlay: {
+    position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)',
+    display: 'flex', alignItems: 'flex-end', zIndex: 20,
+  },
+  infoSheet: {
+    width: '100%', background: colors.bgCard,
+    borderRadius: '16px 16px 0 0',
+    padding: '12px 16px 32px',
+    maxHeight: '75vh', overflowY: 'auto',
+    display: 'flex', flexDirection: 'column', gap: 12,
+    fontFamily: font.family,
+  },
+  infoHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    background: colors.borderLight, alignSelf: 'center', marginBottom: 4,
+  },
+  infoDate: {
+    fontSize: font.base, fontWeight: 600, color: colors.textWhite,
+    margin: 0, textTransform: 'capitalize',
+  },
+  infoFilename: {
+    fontSize: font.sm, color: colors.textDim, margin: 0,
+    wordBreak: 'break-all',
+  },
+  infoCard: {
+    background: colors.bgInput, borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  infoRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '10px 14px',
+  },
+  infoRowBorder: {
+    borderBottom: `1px solid ${colors.border}`,
+  },
+  infoLabel: {
+    fontSize: font.sm, color: colors.textMuted,
+  },
+  infoValue: {
+    fontSize: font.sm, color: colors.textWhite, fontWeight: 500,
+    textAlign: 'right', maxWidth: '60%',
+  },
+  infoMapPlaceholder: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '12px 14px',
+  },
+  infoMapPin: { fontSize: 18 },
+  infoMapCoords: { fontSize: font.sm, color: colors.textMuted },
+  infoCloseBtn: {
+    marginTop: 4, padding: '12px', borderRadius: radius.md,
+    background: colors.bgInput, border: 'none',
+    color: colors.text, fontSize: font.base,
+    cursor: 'pointer', fontFamily: font.family,
   },
 };

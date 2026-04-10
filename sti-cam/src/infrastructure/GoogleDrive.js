@@ -222,7 +222,7 @@ export async function listFiles(folderId) {
   const q = encodeURIComponent(
     `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`
   );
-  const fields = 'files(id,name,thumbnailLink,webViewLink,createdTime)';
+  const fields = 'files(id,name,thumbnailLink,webViewLink,createdTime,size,imageMediaMetadata)';
   const res = await fetch(
     `${DRIVE_API}/files?q=${q}&fields=${fields}&orderBy=createdTime desc&pageSize=100`,
     { headers }
