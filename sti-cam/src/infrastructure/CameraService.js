@@ -61,11 +61,32 @@ export class CameraService {
       videoEl.onloadedmetadata = () => {
         videoEl.play();
         const track = this.stream.getVideoTracks()[0];
-        const settings = track.getSettings();
         this.capabilities = track.getCapabilities?.() || {};
-        resolve({ width: settings.width, height: settings.height });
+        // Return zoom range if the device supports it
+        const zoomCaps = this.capabilities.zoom
+          ? {
+              min: this.capabilities.zoom.min ?? 1,
+              max: this.capabilities.zoom.max ?? 1,
+              step: this.capabilities.zoom.step ?? 0.1,
+            }
+          : null;
+        resolve(zoomCaps);
       };
     });
+  }
+
+  /**
+   * Applies optical/digital zoom via track constraints.
+   * @param {number} value - zoom level within capabilities range
+   */
+  async setZoom(value) {
+    if (!this.stream) return;
+    const track = this.stream.getVideoTracks()[0];
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: value }] });
+    } catch {
+      // zoom not supported on this device/browser
+    }
   }
 
   /**

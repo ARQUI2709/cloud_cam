@@ -8,7 +8,6 @@ import { CameraService } from '../infrastructure/CameraService';
 export function useCamera() {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState(null);
-  const [resolution, setResolution] = useState(null);
   const cameraRef = useRef(null);
   const videoRef = useRef(null);
 
@@ -21,9 +20,9 @@ export function useCamera() {
       cameraRef.current = camera;
       videoRef.current = videoElement;
 
-      const res = await camera.start(videoElement, deviceId);
-      setResolution(res);
+      const zoomCaps = await camera.start(videoElement, deviceId);
       setIsReady(true);
+      return zoomCaps;
     } catch (err) {
       const message =
         err.name === 'NotAllowedError'
@@ -49,7 +48,6 @@ export function useCamera() {
     cameraRef.current?.stop();
     cameraRef.current = null;
     setIsReady(false);
-    setResolution(null);
   }, []);
 
   // Cleanup on unmount
@@ -62,11 +60,11 @@ export function useCamera() {
   return {
     isReady,
     error,
-    resolution,
     start,
     capture,
     stop,
     hasTorch: () => cameraRef.current?.hasTorch() || false,
     setTorch: (on) => cameraRef.current?.setTorch(on),
+    setZoom: (val) => cameraRef.current?.setZoom(val),
   };
 }

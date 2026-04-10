@@ -269,7 +269,7 @@ export default function HomeScreen({
           {/* Header estilo iPhone */}
           <div style={styles.viewerHeader}>
             <button onClick={() => { setViewerIndex(null); setConfirmDeletePhoto(false); }} style={styles.viewerBack}>
-              ‹ Atras
+              ‹
             </button>
             <div style={styles.viewerHeaderCenter}>
               <span style={styles.viewerTitle}>
@@ -283,7 +283,7 @@ export default function HomeScreen({
                 })}
               </span>
             </div>
-            <div style={{ width: 72 }} />
+            <div style={{ width: 36 }} />
           </div>
 
           {/* Foto principal con swipe */}
@@ -518,10 +518,11 @@ const styles = {
     backdropFilter: 'blur(12px)',
   },
   viewerBack: {
-    background: 'none', border: 'none', color: colors.accent,
-    fontSize: 17, cursor: 'pointer', padding: '4px 8px',
-    display: 'flex', alignItems: 'center', gap: 2,
-    minWidth: 72, fontFamily: font.family,
+    width: 36, height: 36, borderRadius: '50%',
+    background: colors.bg, border: 'none', color: colors.accent,
+    fontSize: 24, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
   },
   viewerHeaderCenter: {
     flex: 1, display: 'flex', flexDirection: 'column',
@@ -563,7 +564,7 @@ const styles = {
   },
   actionBtn: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 72, height: 72, borderRadius: '50%', background: 'transparent',
+    width: 72, height: 72, borderRadius: '50%', background: colors.bg,
     border: 'none', cursor: 'pointer',
   },
   actionIcon: { width: 60, height: 60, objectFit: 'contain', opacity: 0.8 },

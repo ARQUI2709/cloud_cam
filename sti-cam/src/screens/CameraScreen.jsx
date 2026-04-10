@@ -9,7 +9,6 @@ import UploadQueueSheet from '../components/UploadQueueSheet';
 import Footer from '../components/Footer';
 import { colors, font, radius, globalStyles } from '../styles/theme';
 import galleryIcon from '../assets/images.png';
-import lensIcon from '../assets/lens.png';
 
 const ASPECTS = ['4:3', '1:1', 'full'];
 
@@ -25,34 +24,29 @@ export default function CameraScreen({
   const [flashAnim, setFlashAnim] = useState(false);
   const [lastThumb, setLastThumb] = useState(null);
   const [showQueue, setShowQueue] = useState(false);
-  const [cameras, setCameras] = useState([]);      // lista de dispositivos de cámara
-  const [camIndex, setCamIndex] = useState(0);     // índice activo
+
+  // Zoom state
+  const [zoomRange, setZoomRange] = useState(null);  // { min, max, step } or null
+  const [zoom, setZoom] = useState(1);
 
   const projectInfo = getProject(project);
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
   const doneCount = queue.filter((q) => q.status === 'done').length;
 
-  // Enumerar cámaras disponibles al montar
-  useEffect(() => {
-    async function loadCameras() {
-      try {
-        // Primero pedimos permiso para que los labels estén disponibles
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoCams = devices.filter((d) => d.kind === 'videoinput');
-        setCameras(videoCams);
-      } catch {
-        // silencioso — el selector simplemente no aparecerá
-      }
-    }
-    loadCameras();
-  }, []);
-
   useEffect(() => {
     if (videoRef.current) {
-      camera.start(videoRef.current, cameras[camIndex]?.deviceId);
+      camera.start(videoRef.current).then((zoomCaps) => {
+        if (zoomCaps) setZoomRange(zoomCaps);
+      });
     }
     return () => camera.stop();
-  }, [camIndex]);
+  }, []);
+
+  // Apply zoom via track constraints
+  const handleZoomChange = useCallback(async (value) => {
+    setZoom(value);
+    await camera.setZoom(value);
+  }, [camera]);
 
   const handleCapture = useCallback(async () => {
     if (!camera.isReady) return;
@@ -80,17 +74,22 @@ export default function CameraScreen({
     enqueueUpload(photo);
   }, [camera, aspect, project, sessionCount, addToQueue, enqueueUpload]);
 
-  // Subir foto(s) desde la galería del dispositivo
+  // Import photo(s) from device gallery, preserving original file metadata
   const handleGalleryFile = useCallback(async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    // Reset input so the same file can be reselected
     e.target.value = '';
 
-    for (const file of files) {
-      const blob = file.slice(0, file.size, 'image/jpeg');
-      const num = sessionCount + files.indexOf(file) + 1;
-      const photo = createPhoto({ blob, projectId: project, sessionNumber: num });
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const blob = file.slice(0, file.size, file.type || 'image/jpeg');
+      const photo = createPhoto({
+        blob,
+        projectId: project,
+        sessionNumber: sessionCount + i + 1,
+        sourceDate: file.lastModified,   // preserve original file date
+        sourceName: file.name,           // preserve original file name
+      });
 
       setLastThumb(photo.thumbUrl);
       addToQueue({
@@ -105,11 +104,6 @@ export default function CameraScreen({
       enqueueUpload(photo);
     }
   }, [project, sessionCount, addToQueue, enqueueUpload]);
-
-  const handleSwitchLens = useCallback(() => {
-    if (cameras.length < 2) return;
-    setCamIndex((i) => (i + 1) % cameras.length);
-  }, [cameras]);
 
   return (
     <div style={styles.fullscreen}>
@@ -144,10 +138,26 @@ export default function CameraScreen({
 
       <AspectPicker aspects={ASPECTS} selected={aspect} onChange={setAspect} />
 
+      {/* Zoom slider — shown only when the camera supports zoom */}
+      {zoomRange && (
+        <div style={styles.zoomBar}>
+          <span style={styles.zoomLabel}>{zoom.toFixed(1)}×</span>
+          <input
+            type="range"
+            min={zoomRange.min}
+            max={zoomRange.max}
+            step={zoomRange.step || 0.1}
+            value={zoom}
+            onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+            style={styles.zoomSlider}
+          />
+        </div>
+      )}
+
       {/* Bottom controls */}
       <div style={styles.bottomBar}>
-        {/* Galería */}
-        <div style={styles.thumbSlot}>
+        {/* Gallery import */}
+        <div style={styles.sideSlot}>
           <button onClick={() => fileInputRef.current?.click()} style={styles.iconBtn}>
             <img src={galleryIcon} alt="Galería" style={styles.iconImg} />
           </button>
@@ -171,13 +181,8 @@ export default function CameraScreen({
 
         <ShutterButton onPress={handleCapture} disabled={!camera.isReady} />
 
-        {/* Lente / cámara */}
-        <div style={styles.statusSlot}>
-          {cameras.length > 1 && (
-            <button onClick={handleSwitchLens} style={styles.iconBtn}>
-              <img src={lensIcon} alt="Cambiar lente" style={styles.iconImg} />
-            </button>
-          )}
+        {/* Upload status */}
+        <div style={styles.sideSlot}>
           {queue.length > 0 && (
             <div style={styles.miniStatus}>
               <span style={{ color: uploadingCount > 0 ? colors.accent : colors.success, fontSize: 11, fontWeight: 600 }}>
@@ -222,9 +227,7 @@ const styles = {
     position: 'absolute', inset: 0, zIndex: 5,
     display: 'flex', flexDirection: 'column', pointerEvents: 'none',
   },
-  cropLetterbox: {
-    flex: 1, background: 'rgba(0,0,0,0.5)',
-  },
+  cropLetterbox: { flex: 1, background: 'rgba(0,0,0,0.5)' },
   cropCenter: {
     width: '100%', flexShrink: 0,
     boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.3)',
@@ -257,13 +260,38 @@ const styles = {
     fontSize: 13, fontWeight: 700,
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px',
   },
+  // Zoom bar sits above the bottom controls
+  zoomBar: {
+    position: 'absolute', bottom: 160, left: 24, right: 24, zIndex: 20,
+    display: 'flex', alignItems: 'center', gap: 10,
+  },
+  zoomLabel: {
+    color: 'white', fontSize: 12, fontWeight: 600,
+    width: 34, textAlign: 'right', flexShrink: 0,
+    textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+  },
+  zoomSlider: {
+    flex: 1, height: 3, accentColor: colors.accent, cursor: 'pointer',
+  },
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20,
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '16px 32px 48px',
     background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
   },
-  thumbSlot: { width: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 },
+  sideSlot: {
+    width: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+  },
+  iconBtn: {
+    width: 52, height: 52, borderRadius: '50%',
+    background: 'rgba(255,255,255,0.18)', border: 'none',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', backdropFilter: 'blur(8px)',
+  },
+  iconImg: {
+    width: 28, height: 28, objectFit: 'contain',
+    filter: 'brightness(0) invert(1)',
+  },
   lastThumb: {
     width: 52, height: 52, borderRadius: 10, overflow: 'hidden',
     border: '2px solid rgba(255,255,255,0.3)', position: 'relative',
@@ -277,19 +305,11 @@ const styles = {
     fontSize: 10, fontWeight: 700,
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
   },
-  statusSlot: { width: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 },
   miniStatus: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
     background: 'rgba(0,0,0,0.4)', padding: '6px 10px', borderRadius: radius.md,
     backdropFilter: 'blur(4px)',
   },
-  iconBtn: {
-    width: 44, height: 44, borderRadius: '50%',
-    background: 'rgba(255,255,255,0.12)', border: 'none',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer', backdropFilter: 'blur(8px)',
-  },
-  iconImg: { width: 22, height: 22, objectFit: 'contain', filter: 'brightness(0) invert(1)' },
   errorOverlay: {
     position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.9)',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
