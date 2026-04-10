@@ -92,7 +92,7 @@ export async function getProjectFolderId(projectName) {
  * @param {function} params.onProgress - Callback de progreso (0-1)
  * @returns {string} file ID del archivo subido
  */
-export async function uploadFile({ blob, fileName, folderId, mimeType = 'image/jpeg', createdAt, onProgress }) {
+export async function uploadFile({ blob, fileName, folderId, mimeType = 'image/jpeg', createdAt, location, captureInfo, onProgress }) {
   const token = await getAccessToken();
 
   const metadata = {
@@ -102,6 +102,16 @@ export async function uploadFile({ blob, fileName, folderId, mimeType = 'image/j
     ...(createdAt && {
       createdTime: new Date(createdAt).toISOString(),
       modifiedTime: new Date(createdAt).toISOString(),
+    }),
+    ...((location || captureInfo) && {
+      properties: {
+        ...(location && {
+          lat: String(location.latitude),
+          lng: String(location.longitude),
+          ...(location.altitude != null && { alt: String(location.altitude) }),
+        }),
+        ...(captureInfo || {}),
+      },
     }),
   };
 
@@ -222,7 +232,7 @@ export async function listFiles(folderId) {
   const q = encodeURIComponent(
     `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`
   );
-  const fields = 'files(id,name,thumbnailLink,webViewLink,createdTime,size,imageMediaMetadata)';
+  const fields = 'files(id,name,thumbnailLink,webViewLink,createdTime,size,imageMediaMetadata,properties)';
   const res = await fetch(
     `${DRIVE_API}/files?q=${q}&fields=${fields}&orderBy=createdTime desc&pageSize=100`,
     { headers }

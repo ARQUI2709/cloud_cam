@@ -2,7 +2,7 @@
  * Entidad de dominio: Photo
  * Representa una foto capturada pendiente de subir o ya subida.
  */
-export function createPhoto({ blob, projectId, sessionNumber, sourceDate, sourceName }) {
+export function createPhoto({ blob, projectId, sessionNumber, sourceDate, sourceName, location, captureInfo }) {
   const now = sourceDate ? new Date(sourceDate) : new Date();
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
   // Derive a clean base name: strip extension from original file name if provided
@@ -26,6 +26,8 @@ export function createPhoto({ blob, projectId, sessionNumber, sourceDate, source
     driveFileId: null,
     error: null,
     createdAt: now,
+    location: location || null,
+    captureInfo: captureInfo || null,
   };
 }
 

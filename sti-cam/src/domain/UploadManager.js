@@ -38,6 +38,8 @@ export class UploadManager {
         folderId,
         mimeType: 'image/jpeg',
         createdAt: photo.createdAt,
+        location: photo.location,
+        captureInfo: photo.captureInfo,
         onProgress: (progress) => {
           this.onUpdate(photo.id, { progress: Math.round(progress * 90) + 10 });
         },

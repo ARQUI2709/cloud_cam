@@ -354,18 +354,31 @@ export default function HomeScreen({
           {showInfo && photos[viewerIndex] && (() => {
             const p = photos[viewerIndex];
             const m = p.imageMediaMetadata || {};
-            const loc = m.location;
+            const pr = p.properties || {};
+            const loc = m.location ||
+              (pr.lat && pr.lng
+                ? { latitude: parseFloat(pr.lat), longitude: parseFloat(pr.lng) }
+                : null);
             const sizeKB = p.size ? (p.size / 1024).toFixed(0) : null;
             const sizeMB = p.size && p.size > 1024 * 1024 ? (p.size / 1024 / 1024).toFixed(1) + ' MB' : sizeKB ? sizeKB + ' KB' : null;
+            // Prefer EXIF values, fall back to captured properties
+            const device   = m.cameraMake ? `${m.cameraMake} ${m.cameraModel || ''}`.trim() : pr.device;
+            const lens     = m.lens || pr.lens;
+            const width    = m.width  || (pr.width  ? parseInt(pr.width)  : null);
+            const height   = m.height || (pr.height ? parseInt(pr.height) : null);
+            const iso      = m.isoSpeed;
+            const focal    = m.focalLength;
+            const aperture = m.aperture;
+            const shutter  = m.exposureTime;
             const rows = [
-              m.cameraModel && { label: 'Cámara', value: m.cameraModel },
-              m.lens && { label: 'Lente', value: m.lens },
-              (m.width && m.height) && { label: 'Resolución', value: `${m.width} × ${m.height}` },
-              sizeMB && { label: 'Tamaño', value: sizeMB },
-              m.isoSpeed && { label: 'ISO', value: m.isoSpeed },
-              m.focalLength && { label: 'Focal', value: `${m.focalLength} mm` },
-              m.aperture && { label: 'Apertura', value: `ƒ${m.aperture}` },
-              m.exposureTime && { label: 'Obturador', value: `1/${Math.round(1 / m.exposureTime)} s` },
+              device                   && { label: 'Cámara',     value: device },
+              lens                     && { label: 'Lente',      value: lens },
+              (width && height)        && { label: 'Resolución', value: `${width} × ${height}` },
+              sizeMB                   && { label: 'Tamaño',     value: sizeMB },
+              iso                      && { label: 'ISO',        value: iso },
+              focal                    && { label: 'Focal',      value: `${focal} mm` },
+              aperture                 && { label: 'Apertura',   value: `ƒ${aperture}` },
+              shutter                  && { label: 'Obturador',  value: `1/${Math.round(1 / shutter)} s` },
             ].filter(Boolean);
 
             return (
@@ -396,11 +409,24 @@ export default function HomeScreen({
                   {/* Map */}
                   {loc && (
                     <div style={styles.infoCard}>
-                      <div style={styles.infoMapPlaceholder}>
-                        <span style={styles.infoMapPin}>📍</span>
-                        <span style={styles.infoMapCoords}>
-                          {loc.latitude.toFixed(5)}, {loc.longitude.toFixed(5)}
-                        </span>
+                      <iframe
+                        title="location"
+                        width="100%"
+                        height="180"
+                        style={{ display: 'block', borderRadius: radius.lg, border: 'none' }}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${loc.longitude - 0.003},${loc.latitude - 0.003},${loc.longitude + 0.003},${loc.latitude + 0.003}&layer=mapnik&marker=${loc.latitude},${loc.longitude}`}
+                      />
+                      <div style={styles.infoMapCoords}>
+                        <span>📍</span>
+                        <span>{loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}</span>
+                        <a
+                          href={`https://maps.google.com/?q=${loc.latitude},${loc.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={styles.infoMapLink}
+                        >
+                          Abrir en Maps
+                        </a>
                       </div>
                     </div>
                   )}
@@ -703,12 +729,14 @@ const styles = {
     fontSize: font.sm, color: colors.textWhite, fontWeight: 500,
     textAlign: 'right', maxWidth: '60%',
   },
-  infoMapPlaceholder: {
+  infoMapCoords: {
     display: 'flex', alignItems: 'center', gap: 8,
-    padding: '12px 14px',
+    padding: '10px 14px', fontSize: font.sm, color: colors.textMuted,
   },
-  infoMapPin: { fontSize: 18 },
-  infoMapCoords: { fontSize: font.sm, color: colors.textMuted },
+  infoMapLink: {
+    marginLeft: 'auto', fontSize: font.sm, color: colors.accent,
+    textDecoration: 'none', fontWeight: 500,
+  },
   infoCloseBtn: {
     marginTop: 4, padding: '12px', borderRadius: radius.md,
     background: colors.bgInput, border: 'none',

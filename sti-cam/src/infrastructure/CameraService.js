@@ -76,6 +76,31 @@ export class CameraService {
   }
 
   /**
+   * Returns current camera settings to store as capture metadata.
+   * @returns {object} flat key-value object safe for Drive properties
+   */
+  getCaptureInfo() {
+    if (!this.stream) return {};
+    const track = this.stream.getVideoTracks()[0];
+    if (!track) return {};
+    const s = track.getSettings();
+    const info = {};
+    if (s.width && s.height)   { info.width = String(s.width); info.height = String(s.height); }
+    if (s.frameRate)            info.frameRate = String(Math.round(s.frameRate));
+    if (s.zoom)                 info.zoom = String(s.zoom);
+    if (s.facingMode)           info.facingMode = s.facingMode;
+    // Track label often contains lens/device info on mobile (e.g. "Back Ultra Wide Camera")
+    if (track.label)            info.lens = track.label;
+    // Device model from userAgent (best-effort)
+    const ua = navigator.userAgent;
+    const iphone = ua.match(/iPhone/);
+    const android = ua.match(/\(Linux.*;\s([^)]+)\)/);
+    if (iphone)                 info.device = 'Apple iPhone';
+    else if (android?.[1])      info.device = android[1].split(';').pop().trim();
+    return info;
+  }
+
+  /**
    * Applies optical/digital zoom via track constraints.
    * @param {number} value - zoom level within capabilities range
    */

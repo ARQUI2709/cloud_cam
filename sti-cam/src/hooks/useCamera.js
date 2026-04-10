@@ -66,5 +66,6 @@ export function useCamera() {
     hasTorch: () => cameraRef.current?.hasTorch() || false,
     setTorch: (on) => cameraRef.current?.setTorch(on),
     setZoom: (val) => cameraRef.current?.setZoom(val),
+    getCaptureInfo: () => cameraRef.current?.getCaptureInfo() || {},
   };
 }

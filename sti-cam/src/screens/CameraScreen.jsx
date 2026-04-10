@@ -28,6 +28,7 @@ export default function CameraScreen({
   // Zoom state
   const [zoomRange, setZoomRange] = useState(null);  // { min, max, step } or null
   const [zoom, setZoom] = useState(1);
+  const lastLocation = useRef(null);  // cached GPS position
 
   const projectInfo = getProject(project);
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
@@ -40,6 +41,23 @@ export default function CameraScreen({
       setLastThumb(null);
     }
   }, [uploadingCount, pendingCount, queue.length]);
+
+  // Watch GPS continuously while camera is open
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        lastLocation.current = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          altitude: pos.coords.altitude,
+        };
+      },
+      null,
+      { enableHighAccuracy: true, maximumAge: 10000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -70,7 +88,13 @@ export default function CameraScreen({
     setTimeout(() => setFlashAnim(false), 150);
 
     const num = sessionCount + 1;
-    const photo = createPhoto({ blob, projectId: project, sessionNumber: num });
+    const photo = createPhoto({
+      blob,
+      projectId: project,
+      sessionNumber: num,
+      location: lastLocation.current,
+      captureInfo: camera.getCaptureInfo(),
+    });
 
     setLastThumb(photo.thumbUrl);
     addToQueue({
