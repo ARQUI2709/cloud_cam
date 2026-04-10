@@ -1,6 +1,6 @@
 import { colors, radius } from '../styles/theme';
 
-const LABELS = { '4:3': '4:3', '16:9': '16:9', '1:1': '1:1', 'full': 'Full' };
+const LABELS = { '4:3': '4:3', '1:1': '1:1', 'full': 'Full' };
 
 export default function AspectPicker({ aspects, selected, onChange }) {
   return (

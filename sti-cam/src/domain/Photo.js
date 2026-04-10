@@ -9,7 +9,7 @@ export function createPhoto({ blob, projectId, sessionNumber }) {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     projectId,
-    fileName: `STI_${projectId}_${timestamp}_${String(sessionNumber).padStart(3, '0')}.jpg`,
+    fileName: `STI_${timestamp}_${String(sessionNumber).padStart(3, '0')}.jpg`,
     blob,
     size: blob.size,
     sizeLabel: `${(blob.size / 1024 / 1024).toFixed(1)} MB`,

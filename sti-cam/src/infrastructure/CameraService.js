@@ -27,25 +27,29 @@ export class CameraService {
    * @param {HTMLVideoElement} videoEl
    * @returns {Promise<{width: number, height: number}>} resolución del video
    */
-  async start(videoEl) {
+  async start(videoEl, deviceId) {
     this.videoElement = videoEl;
 
-    // Reuse cached stream if it's still active (tracks not ended)
-    const canReuse = cachedStream &&
+    // Reuse cached stream only if no specific deviceId is requested
+    const canReuse = !deviceId &&
+      cachedStream &&
       cachedStream.getVideoTracks().length > 0 &&
       cachedStream.getVideoTracks()[0].readyState === 'live';
 
     if (canReuse) {
       this.stream = cachedStream;
     } else {
-      const constraints = {
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 3840 },
-          height: { ideal: 2160 },
-        },
-        audio: false,
-      };
+      // Stop previous cached stream before switching device
+      if (cachedStream) {
+        cachedStream.getTracks().forEach((t) => t.stop());
+        cachedStream = null;
+      }
+
+      const videoConstraints = deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } };
+
+      const constraints = { video: videoConstraints, audio: false };
 
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       cachedStream = this.stream;

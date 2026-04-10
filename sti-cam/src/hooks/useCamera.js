@@ -12,7 +12,7 @@ export function useCamera() {
   const cameraRef = useRef(null);
   const videoRef = useRef(null);
 
-  const start = useCallback(async (videoElement) => {
+  const start = useCallback(async (videoElement, deviceId) => {
     setError(null);
     setIsReady(false);
 
@@ -21,7 +21,7 @@ export function useCamera() {
       cameraRef.current = camera;
       videoRef.current = videoElement;
 
-      const res = await camera.start(videoElement);
+      const res = await camera.start(videoElement, deviceId);
       setResolution(res);
       setIsReady(true);
     } catch (err) {

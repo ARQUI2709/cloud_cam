@@ -58,6 +58,7 @@ export default function HomeScreen({
   const [confirmDeletePhoto, setConfirmDeletePhoto] = useState(false);
   const touchStartX = useRef(0);
   const touchDelta = useRef(0);
+  const thumbStripRef = useRef(null);
 
   useEffect(() => {
     if (!selectedProject || !project || !GOOGLE_CLIENT_ID) {
@@ -146,6 +147,16 @@ export default function HomeScreen({
     }
     touchDelta.current = 0;
   }, [viewerIndex, photos.length]);
+
+  // Scroll thumbnail strip to keep active thumb visible
+  useEffect(() => {
+    if (viewerIndex === null || !thumbStripRef.current) return;
+    const strip = thumbStripRef.current;
+    const thumb = strip.children[viewerIndex];
+    if (thumb) {
+      thumb.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [viewerIndex]);
 
   const dateGroups = groupByDate(photos);
 
@@ -255,47 +266,70 @@ export default function HomeScreen({
       {/* Photo Viewer Overlay */}
       {viewerIndex !== null && photos[viewerIndex] && (
         <div style={styles.viewer}>
+          {/* Header estilo iPhone */}
           <div style={styles.viewerHeader}>
-            <button onClick={() => setViewerIndex(null)} style={styles.viewerClose}>✕</button>
-            <span style={styles.viewerCount}>{viewerIndex + 1} / {photos.length}</span>
-            <div style={{ width: 38 }} />
+            <button onClick={() => { setViewerIndex(null); setConfirmDeletePhoto(false); }} style={styles.viewerBack}>
+              ‹ Atras
+            </button>
+            <div style={styles.viewerHeaderCenter}>
+              <span style={styles.viewerTitle}>
+                {new Date(photos[viewerIndex].createdTime).toLocaleDateString('es-CO', {
+                  weekday: 'long', day: 'numeric', month: 'long',
+                })}
+              </span>
+              <span style={styles.viewerSubtitle}>
+                {new Date(photos[viewerIndex].createdTime).toLocaleTimeString('es-CO', {
+                  hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+            </div>
+            <div style={{ width: 72 }} />
           </div>
 
+          {/* Foto principal con swipe */}
           <div
             style={styles.viewerBody}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            {viewerIndex > 0 && (
-              <button
-                onClick={() => setViewerIndex(viewerIndex - 1)}
-                style={{ ...styles.navBtn, left: 8 }}
-              >
-                ‹
-              </button>
-            )}
             <img
+              key={photos[viewerIndex].id}
               src={getFullUrl(photos[viewerIndex])}
               alt={photos[viewerIndex].name}
               style={styles.viewerImg}
               referrerPolicy="no-referrer"
             />
-            {viewerIndex < photos.length - 1 && (
-              <button
-                onClick={() => setViewerIndex(viewerIndex + 1)}
-                style={{ ...styles.navBtn, right: 8 }}
-              >
-                ›
-              </button>
-            )}
           </div>
 
+          {/* Tira de thumbnails */}
+          <div style={styles.thumbStrip} ref={thumbStripRef}>
+            {photos.map((photo, idx) => (
+              <div
+                key={photo.id}
+                onClick={() => setViewerIndex(idx)}
+                style={{
+                  ...styles.thumbItem,
+                  ...(idx === viewerIndex ? styles.thumbItemActive : {}),
+                }}
+              >
+                <img
+                  src={getThumbnailUrl(photo)}
+                  alt=""
+                  style={styles.thumbItemImg}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Footer con acciones */}
           <div style={styles.viewerFooter}>
             <button onClick={() => handleShare(photos[viewerIndex])} style={styles.actionBtn} title="Compartir">
               <img src={shareImg} alt="Compartir" style={{ ...styles.actionIcon, opacity: (sharing || copied) ? 0.4 : 0.8 }} />
             </button>
-            <button onClick={() => alert(`Nombre: ${photos[viewerIndex].name}\nFecha: ${new Date(photos[viewerIndex].createdTime).toLocaleString()}`)} style={styles.actionBtn} title="Información">
+            <button onClick={() => alert(`Nombre: ${photos[viewerIndex].name}\nFecha: ${new Date(photos[viewerIndex].createdTime).toLocaleString()}`)} style={styles.actionBtn} title="Informacion">
               <img src={infoImg} alt="Info" style={styles.actionIcon} />
             </button>
             <button onClick={() => setConfirmDeletePhoto(true)} style={styles.actionBtn} title="Eliminar">
@@ -472,21 +506,60 @@ const styles = {
   },
   // Viewer overlay
   viewer: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)',
+    position: 'fixed', inset: 0, background: '#000',
     zIndex: 100, display: 'flex', flexDirection: 'column',
-    fontFamily: font.family,
+    fontFamily: font.family, overscrollBehavior: 'contain',
   },
   viewerHeader: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '14px 16px', paddingTop: 'max(14px, env(safe-area-inset-top, 0px))',
-    flexShrink: 0,
+    display: 'flex', alignItems: 'center',
+    padding: '10px 8px 8px',
+    paddingTop: 'max(10px, env(safe-area-inset-top, 0px))',
+    flexShrink: 0, background: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(12px)',
   },
-  viewerClose: {
-    background: 'none', border: 'none', color: 'white',
-    fontSize: 22, cursor: 'pointer', padding: '4px 8px',
+  viewerBack: {
+    background: 'none', border: 'none', color: colors.accent,
+    fontSize: 17, cursor: 'pointer', padding: '4px 8px',
+    display: 'flex', alignItems: 'center', gap: 2,
+    minWidth: 72, fontFamily: font.family,
   },
-  viewerCount: {
-    flex: 1, fontSize: font.sm, color: colors.textMuted, textAlign: 'center',
+  viewerHeaderCenter: {
+    flex: 1, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', gap: 1,
+  },
+  viewerTitle: {
+    fontSize: font.sm, fontWeight: 600, color: 'white',
+    textTransform: 'capitalize',
+  },
+  viewerSubtitle: {
+    fontSize: font.xs, color: colors.textMuted,
+  },
+  viewerBody: {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden', touchAction: 'pan-x',
+  },
+  viewerImg: {
+    maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
+    userSelect: 'none', pointerEvents: 'none',
+  },
+  thumbStrip: {
+    display: 'flex', flexDirection: 'row', gap: 3,
+    overflowX: 'auto', overflowY: 'hidden',
+    padding: '8px 8px 4px',
+    flexShrink: 0, scrollbarWidth: 'none',
+    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)',
+  },
+  thumbItem: {
+    width: 56, height: 56, flexShrink: 0,
+    borderRadius: 6, overflow: 'hidden', cursor: 'pointer',
+    border: '2px solid transparent', boxSizing: 'border-box',
+    opacity: 0.6,
+  },
+  thumbItemActive: {
+    border: `2px solid white`, opacity: 1,
+  },
+  thumbItemImg: {
+    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
   },
   actionBtn: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -494,24 +567,12 @@ const styles = {
     border: 'none', cursor: 'pointer',
   },
   actionIcon: { width: 60, height: 60, objectFit: 'contain', opacity: 0.8 },
-  viewerBody: {
-    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    position: 'relative', overflow: 'hidden',
-  },
-  viewerImg: {
-    maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
-  },
-  navBtn: {
-    position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-    width: 44, height: 44, borderRadius: '50%',
-    background: 'rgba(255,255,255,0.15)', border: 'none',
-    color: 'white', fontSize: 28, cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    backdropFilter: 'blur(4px)', zIndex: 2,
-  },
   viewerFooter: {
-    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 32,
-    padding: '16px', flexShrink: 0,
+    display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+    padding: '8px 16px',
+    paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))',
+    flexShrink: 0, background: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(12px)',
   },
   deleteOverlay: {
     position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
