@@ -564,16 +564,15 @@ const styles = {
   },
   actionBtn: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 72, height: 72, borderRadius: '50%', background: colors.bg,
+    width: 72, height: 72, borderRadius: '50%', background: 'transparent',
     border: 'none', cursor: 'pointer',
   },
   actionIcon: { width: 60, height: 60, objectFit: 'contain', opacity: 0.8 },
   viewerFooter: {
     display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-    padding: '8px 16px',
-    paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))',
-    flexShrink: 0, background: 'rgba(0,0,0,0.6)',
-    backdropFilter: 'blur(12px)',
+    padding: '12px 0',
+    paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
+    flexShrink: 0, background: '#131618',
   },
   deleteOverlay: {
     position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',

@@ -158,25 +158,27 @@ export default function CameraScreen({
       <div style={styles.bottomBar}>
         {/* Gallery import */}
         <div style={styles.sideSlot}>
-          <button onClick={() => fileInputRef.current?.click()} style={styles.iconBtn}>
-            <img src={galleryIcon} alt="Galería" style={styles.iconImg} />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleGalleryFile}
-          />
-          {lastThumb && (
-            <div onClick={() => setShowQueue(true)} style={styles.lastThumb}>
-              <img src={lastThumb} alt="" style={styles.thumbImg} />
-              {uploadingCount > 0 && (
-                <div style={styles.thumbBadge}>{uploadingCount}</div>
-              )}
-            </div>
-          )}
+          <div style={styles.galleryStack}>
+            <button onClick={() => fileInputRef.current?.click()} style={styles.iconBtn}>
+              <img src={galleryIcon} alt="Galería" style={styles.iconImg} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleGalleryFile}
+            />
+            {lastThumb && (
+              <div onClick={() => setShowQueue(true)} style={styles.lastThumb}>
+                <img src={lastThumb} alt="" style={styles.thumbImg} />
+                {uploadingCount > 0 && (
+                  <div style={styles.thumbBadge}>{uploadingCount}</div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <ShutterButton onPress={handleCapture} disabled={!camera.isReady} />
@@ -262,7 +264,7 @@ const styles = {
   },
   // Zoom bar sits above the bottom controls
   zoomBar: {
-    position: 'absolute', bottom: 160, left: 24, right: 24, zIndex: 20,
+    position: 'absolute', bottom: 200, left: 24, right: 24, zIndex: 20,
     display: 'flex', alignItems: 'center', gap: 10,
   },
   zoomLabel: {
@@ -280,10 +282,13 @@ const styles = {
     background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
   },
   sideSlot: {
-    width: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+    width: 64, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  galleryStack: {
+    position: 'relative', width: 52, height: 52,
   },
   iconBtn: {
-    width: 52, height: 52, borderRadius: '50%',
+    width: '100%', height: '100%', borderRadius: '50%',
     background: 'rgba(255,255,255,0.18)', border: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer', backdropFilter: 'blur(8px)',
@@ -293,8 +298,9 @@ const styles = {
     filter: 'brightness(0) invert(1)',
   },
   lastThumb: {
-    width: 52, height: 52, borderRadius: 10, overflow: 'hidden',
-    border: '2px solid rgba(255,255,255,0.3)', position: 'relative',
+    position: 'absolute', inset: 0,
+    borderRadius: 10, overflow: 'hidden',
+    border: '2px solid rgba(255,255,255,0.3)',
     cursor: 'pointer', animation: 'popIn 0.2s ease',
   },
   thumbImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
