@@ -110,7 +110,7 @@ async function _writeHeader(spreadsheetId, headers) {
         {
           repeatCell: {
             range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
-            cell: { userEnteredFormat: { textFormat: { bold: true }, backgroundColor: { red: 0.1, green: 0.1, blue: 0.12 } } },
+            cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, backgroundColor: { red: 0.18, green: 0.31, blue: 0.57 } } },
             fields: 'userEnteredFormat(textFormat,backgroundColor)',
           },
         },
@@ -168,6 +168,43 @@ export async function appendPhotoRow(spreadsheetId, photo) {
       ]],
     }),
   });
+}
+
+/**
+ * Syncs the sheet with the current Drive folder contents.
+ * Reads column E (File IDs already in the sheet) and appends rows for any
+ * Drive files that are not yet registered — backfills photos uploaded before
+ * the sheet existed.
+ * @param {string} spreadsheetId
+ * @param {Array<{id, name, createdTime, size}>} driveFiles - from listFiles()
+ */
+export async function syncSheetFromDrive(spreadsheetId, driveFiles) {
+  if (!driveFiles?.length) return;
+  const headers = await authHeaders();
+
+  // Read existing file IDs from column E
+  const res = await fetch(`${SHEETS_API}/${spreadsheetId}/values/Fotos!E:E`, { headers });
+  const { values = [] } = await res.json();
+  const existingIds = new Set(values.flat().filter(Boolean));
+
+  const missing = driveFiles.filter((f) => !existingIds.has(f.id));
+  if (!missing.length) return;
+
+  const rows = missing.map((f) => {
+    const imageUrl = `https://drive.google.com/thumbnail?id=${f.id}&sz=w400`;
+    const date = f.createdTime ? new Date(f.createdTime).toLocaleString('es-CO') : '';
+    const size = f.size ? `${(parseInt(f.size, 10) / 1024).toFixed(0)} KB` : '';
+    return [f.name, date, size, `=IMAGE("${imageUrl}")`, f.id];
+  });
+
+  await fetch(
+    `${SHEETS_API}/${spreadsheetId}/values/Fotos!A:E:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ values: rows }),
+    }
+  );
 }
 
 /**

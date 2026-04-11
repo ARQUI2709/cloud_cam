@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 import { getProject as getProjectById } from '../config/projects';
 import { getProjectFolderId, listFiles, deleteFile } from '../infrastructure/GoogleDrive';
-import { getOrCreateSheet, removePhotoRow } from '../infrastructure/GoogleSheets';
+import { getOrCreateSheet, removePhotoRow, syncSheetFromDrive } from '../infrastructure/GoogleSheets';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 import { getAccessToken } from '../infrastructure/GoogleAuth';
 import ProjectSelector from '../components/ProjectSelector';
@@ -71,8 +71,17 @@ export default function HomeScreen({
     let cancelled = false;
     setLoadingPhotos(true);
     getProjectFolderId(project.name)
-      .then((folderId) => listFiles(folderId))
-      .then((files) => { if (!cancelled) setPhotos(files); })
+      .then(async (folderId) => {
+        const files = await listFiles(folderId);
+        if (!cancelled) setPhotos(files);
+        // Backfill sheet with any photos not yet registered (non-critical)
+        try {
+          const spreadsheetId = await getOrCreateSheet(project.name, folderId);
+          await syncSheetFromDrive(spreadsheetId, files);
+        } catch (e) {
+          console.warn('[sheet] sync from Drive failed (non-critical):', e);
+        }
+      })
       .catch(() => { if (!cancelled) setPhotos([]); })
       .finally(() => { if (!cancelled) setLoadingPhotos(false); });
     return () => { cancelled = true; };
