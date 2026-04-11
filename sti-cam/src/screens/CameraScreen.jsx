@@ -126,7 +126,6 @@ export default function CameraScreen({
         projectName: projectInfo?.name,
         sessionNumber: sessionCount + i + 1,
         sourceDate: file.lastModified,   // preserve original file date
-        sourceName: file.name,           // preserve original file name
       });
 
       setLastThumb(photo.thumbUrl);

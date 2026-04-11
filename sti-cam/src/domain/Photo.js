@@ -2,20 +2,14 @@
  * Entidad de dominio: Photo
  * Representa una foto capturada pendiente de subir o ya subida.
  */
-export function createPhoto({ blob, projectId, projectName, sessionNumber, sourceDate, sourceName, location, captureInfo }) {
+export function createPhoto({ blob, projectId, projectName, sessionNumber, sourceDate, location, captureInfo }) {
   const now = sourceDate ? new Date(sourceDate) : new Date();
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
   const projectPrefix = projectName
     ? projectName.trim().split(/\s+/)[0].replace(/[^a-zA-Z0-9]/g, '')
     : '';
   const prefix = projectPrefix ? `STI_${projectPrefix}` : 'STI';
-  // Derive a clean base name: strip extension from original file name if provided
-  const baseName = sourceName
-    ? sourceName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
-    : null;
-  const fileName = baseName
-    ? `${prefix}_${timestamp}_${baseName}.jpg`
-    : `${prefix}_${timestamp}_${String(sessionNumber).padStart(3, '0')}.jpg`;
+  const fileName = `${prefix}_${timestamp}_${String(sessionNumber).padStart(3, '0')}.jpg`;
 
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
