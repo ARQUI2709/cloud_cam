@@ -8,7 +8,7 @@
  *   E: File ID (oculto, usado para localizar filas al eliminar)
  */
 
-import { getAccessToken, clearToken } from './GoogleAuth.js';
+import { getAccessToken } from './GoogleAuth.js';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DRIVE_API  = 'https://www.googleapis.com/drive/v3';
@@ -16,8 +16,8 @@ const DRIVE_API  = 'https://www.googleapis.com/drive/v3';
 // Cache: projectName → spreadsheetId
 const sheetCache = new Map();
 
-async function authHeaders(includeContentType = true) {
-  const token = await getAccessToken();
+async function authHeaders(includeContentType = true, forceConsent = false) {
+  const token = await getAccessToken(forceConsent);
   const h = { Authorization: `Bearer ${token}` };
   if (includeContentType) h['Content-Type'] = 'application/json';
   return h;
@@ -59,20 +59,8 @@ export async function getOrCreateSheet(projectName, folderId) {
       }],
     }),
   });
-  // If 401/403, the cached token lacks the spreadsheets scope — force re-auth and retry once
   if (createRes.status === 401 || createRes.status === 403) {
-    clearToken();
-    const retryHeaders = await authHeaders();
-    createRes = await fetch(SHEETS_API, {
-      method: 'POST',
-      headers: retryHeaders,
-      body: JSON.stringify({
-        properties: { title: sheetName },
-        sheets: [{
-          properties: { title: 'Fotos', gridProperties: { frozenRowCount: 1 } },
-        }],
-      }),
-    });
+    throw new Error(`Sheets API rechazó el token (${createRes.status}): cerrá sesión y volvé a iniciar para otorgar el permiso de Sheets.`);
   }
   if (!createRes.ok) {
     const err = await createRes.json().catch(() => ({}));

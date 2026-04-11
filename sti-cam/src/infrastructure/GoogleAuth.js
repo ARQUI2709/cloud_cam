@@ -17,7 +17,7 @@ let tokenExpiresAt = 0;
 // Restore from localStorage on load
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-  if (saved && saved.token && saved.expiresAt > Date.now()) {
+  if (saved && saved.token && saved.expiresAt > Date.now() && saved.grantedScopes === GOOGLE_SCOPES) {
     accessToken = saved.token;
     tokenExpiresAt = saved.expiresAt;
   }
@@ -27,6 +27,7 @@ function persistSession(user) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     token: accessToken,
     expiresAt: tokenExpiresAt,
+    grantedScopes: GOOGLE_SCOPES,
     user,
   }));
 }
@@ -76,12 +77,14 @@ export function getSavedUser() {
 
 /**
  * Solicita token de acceso al usuario (popup de Google).
+ * @param {boolean} forceConsent - Si true, fuerza pantalla de consentimiento aunque ya haya sesión
  */
-export function requestAccessToken() {
+export function requestAccessToken(forceConsent = false) {
   return new Promise((resolve, reject) => {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_SCOPES,
+      prompt: forceConsent ? 'consent' : '',
       callback: (response) => {
         if (response.error) {
           reject(new Error(response.error_description || response.error));
@@ -120,11 +123,11 @@ export function requestAccessToken() {
 /**
  * Devuelve el access token actual, renovándolo si es necesario.
  */
-export async function getAccessToken() {
-  if (accessToken && Date.now() < tokenExpiresAt - 60000) {
+export async function getAccessToken(forceConsent = false) {
+  if (!forceConsent && accessToken && Date.now() < tokenExpiresAt - 60000) {
     return accessToken;
   }
-  const result = await requestAccessToken();
+  const result = await requestAccessToken(forceConsent);
   return result.accessToken;
 }
 
