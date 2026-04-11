@@ -34,7 +34,7 @@ export async function getOrCreateSheet(projectName, folderId) {
   if (sheetCache.has(projectName)) return sheetCache.get(projectName);
 
   const headers = await authHeaders();
-  const sheetName = `STI_${projectName}`;
+  const sheetName = `STI_000_${projectName}`;
 
   // Search for existing sheet in the project folder
   const q = encodeURIComponent(
@@ -109,8 +109,16 @@ async function _writeHeader(spreadsheetId, headers) {
       requests: [
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
             cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, backgroundColor: { red: 0.18, green: 0.31, blue: 0.57 } } },
+            fields: 'userEnteredFormat(textFormat,backgroundColor)',
+          },
+        },
+        // Clear format on data rows so they don't inherit header style
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
+            cell: { userEnteredFormat: { textFormat: { bold: false, foregroundColor: { red: 0, green: 0, blue: 0 } }, backgroundColor: { red: 1, green: 1, blue: 1 } } },
             fields: 'userEnteredFormat(textFormat,backgroundColor)',
           },
         },
