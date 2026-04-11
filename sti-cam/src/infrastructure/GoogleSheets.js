@@ -130,11 +130,11 @@ async function _writeHeader(spreadsheetId, headers) {
             fields: 'hiddenByUser',
           },
         },
-        // Set row height for image rows (60px)
+        // Set row height for image rows
         {
           updateDimensionProperties: {
             range: { sheetId, dimension: 'ROWS', startIndex: 1 },
-            properties: { pixelSize: 120 },
+            properties: { pixelSize: 180 },
             fields: 'pixelSize',
           },
         },
@@ -163,19 +163,46 @@ export async function appendPhotoRow(spreadsheetId, photo) {
     : '';
   const size = photo.sizeLabel || '';
 
-  await fetch(`${SHEETS_API}/${spreadsheetId}/values/Fotos!A:E:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      values: [[
-        photo.fileName,
-        date,
-        size,
-        `=IMAGE("${imageUrl}")`,
-        photo.driveFileId,
-      ]],
-    }),
-  });
+  const appendRes = await fetch(
+    `${SHEETS_API}/${spreadsheetId}/values/Fotos!A:E:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS&includeValuesInResponse=false`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        values: [[
+          photo.fileName,
+          date,
+          size,
+          `=IMAGE("${imageUrl}")`,
+          photo.driveFileId,
+        ]],
+      }),
+    }
+  );
+  const appendData = await appendRes.json();
+
+  // Set row height on the newly appended row (Sheets doesn't inherit row height)
+  const updatedRange = appendData?.updates?.updatedRange; // e.g. "Fotos!A5:E5"
+  const rowMatch = updatedRange?.match(/:([A-Z]+)(\d+)$/);
+  if (rowMatch) {
+    const rowIndex = parseInt(rowMatch[2], 10) - 1; // 0-based
+    const sheetRes = await fetch(`${SHEETS_API}/${spreadsheetId}?fields=sheets.properties`, { headers });
+    const { sheets } = await sheetRes.json();
+    const sheetId = sheets[0].properties.sheetId;
+    await fetch(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        requests: [{
+          updateDimensionProperties: {
+            range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 },
+            properties: { pixelSize: 180 },
+            fields: 'pixelSize',
+          },
+        }],
+      }),
+    });
+  }
 }
 
 /**
@@ -205,7 +232,7 @@ export async function syncSheetFromDrive(spreadsheetId, driveFiles) {
     return [f.name, date, size, `=IMAGE("${imageUrl}")`, f.id];
   });
 
-  await fetch(
+  const appendRes = await fetch(
     `${SHEETS_API}/${spreadsheetId}/values/Fotos!A:E:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
@@ -213,6 +240,31 @@ export async function syncSheetFromDrive(spreadsheetId, driveFiles) {
       body: JSON.stringify({ values: rows }),
     }
   );
+  const appendData = await appendRes.json();
+
+  // Apply 180px row height to all inserted rows
+  const updatedRange = appendData?.updates?.updatedRange; // e.g. "Fotos!A2:E10"
+  const rangeMatch = updatedRange?.match(/(\d+):([A-Z]+)(\d+)$/);
+  if (rangeMatch) {
+    const startRow = parseInt(rangeMatch[1], 10) - 1; // 0-based
+    const endRow = parseInt(rangeMatch[3], 10);       // exclusive
+    const sheetRes = await fetch(`${SHEETS_API}/${spreadsheetId}?fields=sheets.properties`, { headers });
+    const { sheets } = await sheetRes.json();
+    const sheetId = sheets[0].properties.sheetId;
+    await fetch(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        requests: [{
+          updateDimensionProperties: {
+            range: { sheetId, dimension: 'ROWS', startIndex: startRow, endIndex: endRow },
+            properties: { pixelSize: 180 },
+            fields: 'pixelSize',
+          },
+        }],
+      }),
+    });
+  }
 }
 
 /**
