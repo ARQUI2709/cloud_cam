@@ -122,7 +122,7 @@ export class CameraService {
    * @param {number} quality - JPEG quality 0-1
    * @returns {Promise<Blob>}
    */
-  capture(aspectId = '4:3', quality = 0.92) {
+  capture(aspectId = '4:3', quality = 0.97) {
     return new Promise(async (resolve, reject) => {
       if (!this.videoElement) {
         reject(new Error('Camera not started'));
@@ -131,13 +131,24 @@ export class CameraService {
 
       const video = this.videoElement;
 
-      // Use createImageBitmap to get a correctly oriented bitmap
+      // Prefer ImageCapture API — grabs full-resolution frame directly from sensor
+      // Falls back to createImageBitmap(video) if not supported
       let bitmap;
       try {
-        bitmap = await createImageBitmap(video);
+        const track = this.stream?.getVideoTracks()[0];
+        if (track && typeof ImageCapture !== 'undefined') {
+          const imageCapture = new ImageCapture(track);
+          bitmap = await imageCapture.grabFrame();
+        } else {
+          bitmap = await createImageBitmap(video);
+        }
       } catch {
-        reject(new Error('Failed to create bitmap from video'));
-        return;
+        try {
+          bitmap = await createImageBitmap(video);
+        } catch {
+          reject(new Error('Failed to capture frame'));
+          return;
+        }
       }
 
       const bw = bitmap.width;
