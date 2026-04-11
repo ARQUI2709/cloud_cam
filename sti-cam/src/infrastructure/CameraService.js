@@ -131,28 +131,37 @@ export class CameraService {
 
       const video = this.videoElement;
 
-      // Prefer ImageCapture API — grabs full-resolution frame directly from sensor
-      // Falls back to createImageBitmap(video) if not supported
+      // Prefer ImageCapture API — grabs full-resolution frame directly from sensor.
+      // Falls back to createImageBitmap using video.videoWidth/videoHeight (native
+      // stream resolution, not the rendered element size).
       let bitmap;
+      let nativeW = video.videoWidth  || 1920;
+      let nativeH = video.videoHeight || 1080;
       try {
         const track = this.stream?.getVideoTracks()[0];
         if (track && typeof ImageCapture !== 'undefined') {
           const imageCapture = new ImageCapture(track);
           bitmap = await imageCapture.grabFrame();
+          nativeW = bitmap.width;
+          nativeH = bitmap.height;
         } else {
-          bitmap = await createImageBitmap(video);
+          bitmap = await createImageBitmap(video, 0, 0, nativeW, nativeH);
         }
       } catch {
         try {
-          bitmap = await createImageBitmap(video);
+          bitmap = await createImageBitmap(video, 0, 0, nativeW, nativeH);
         } catch {
-          reject(new Error('Failed to capture frame'));
-          return;
+          try {
+            bitmap = await createImageBitmap(video);
+          } catch {
+            reject(new Error('Failed to capture frame'));
+            return;
+          }
         }
       }
 
-      const bw = bitmap.width;
-      const bh = bitmap.height;
+      const bw = bitmap.width  || nativeW;
+      const bh = bitmap.height || nativeH;
 
       // On mobile in portrait, the bitmap may still be landscape.
       // Check if we need to treat it as portrait.
@@ -188,6 +197,8 @@ export class CameraService {
       this.canvas.width = cw;
       this.canvas.height = ch;
       const ctx = this.canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
 
       if (needsRotation) {
         // Draw rotated: the bitmap is landscape but we need portrait output
