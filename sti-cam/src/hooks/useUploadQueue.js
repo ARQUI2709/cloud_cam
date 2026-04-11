@@ -4,6 +4,7 @@ import { uploadFile, getProjectFolderId } from '../infrastructure/GoogleDrive';
 import { getOrCreateSheet, appendPhotoRow } from '../infrastructure/GoogleSheets';
 import { getProject } from '../config/projects';
 import { GOOGLE_CLIENT_ID } from '../config/google';
+import { saveToQueue, removeFromQueue } from '../infrastructure/OfflineQueue';
 
 /**
  * Hook que conecta el UploadManager con Google Drive.
@@ -17,7 +18,13 @@ export function useUploadQueue({ updateQueueItem }) {
       managerRef.current = new UploadManager({
         driveService: { uploadFile },
         sheetsService: { getOrCreateSheet, appendPhotoRow },
-        onUpdate: updateQueueItem,
+        onUpdate: (id, updates) => {
+          updateQueueItem(id, updates);
+          // Remove from IDB once the upload is settled (success or permanent error)
+          if (updates.status === 'done' || updates.status === 'error') {
+            removeFromQueue(id).catch(() => {});
+          }
+        },
       });
     }
     return managerRef.current;
@@ -25,7 +32,8 @@ export function useUploadQueue({ updateQueueItem }) {
 
   /**
    * Encola una foto para subir.
-   * Si Google no está configurado, simula el upload.
+   * Persists to IndexedDB first so it survives app close.
+   * If Google isn't configured, simulates the upload (demo mode).
    */
   const enqueueUpload = useCallback(async (photo) => {
     const isConfigured = !!GOOGLE_CLIENT_ID;
@@ -46,6 +54,9 @@ export function useUploadQueue({ updateQueueItem }) {
       return;
     }
 
+    // Persist to IndexedDB before attempting upload (non-fatal if IDB unavailable)
+    try { await saveToQueue(photo); } catch (_) {}
+
     // Producción: obtener/crear carpeta y subir
     try {
       const project = getProject(photo.projectId);
@@ -58,9 +69,35 @@ export function useUploadQueue({ updateQueueItem }) {
 
       getManager().enqueue(photo, folderId, project.name);
     } catch (err) {
-      updateQueueItem(photo.id, { status: 'error', error: err.message });
+      // Network or auth error — leave in IDB, mark as offline in UI
+      updateQueueItem(photo.id, { status: 'offline', error: err.message });
     }
   }, [getManager, updateQueueItem]);
 
-  return { enqueueUpload };
+  /**
+   * Retry a batch of photos loaded from IndexedDB (called on reconnect).
+   * Reconstructs the queue item in React state then enqueues the upload.
+   */
+  const retryOfflineQueue = useCallback(async (photos, addToQueue) => {
+    for (const photo of photos) {
+      // Restore blob URL for thumbnail display
+      const thumbUrl = URL.createObjectURL(photo.blob);
+      addToQueue({
+        id: photo.id,
+        projectId: photo.projectId,
+        name: photo.fileName,
+        size: `${(photo.blob.size / 1024 / 1024).toFixed(1)} MB`,
+        thumb: thumbUrl,
+        status: 'pending',
+        progress: 0,
+      });
+      await enqueueUpload({
+        ...photo,
+        thumbUrl,
+        createdAt: new Date(photo.createdAt),
+      });
+    }
+  }, [enqueueUpload]);
+
+  return { enqueueUpload, retryOfflineQueue };
 }

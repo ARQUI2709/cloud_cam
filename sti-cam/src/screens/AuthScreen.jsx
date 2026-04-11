@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 
+const InstallIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 16l-4-4h3V4h2v8h3l-4 4z"/>
+    <path d="M20 18H4v2h16v-2z"/>
+  </svg>
+);
+
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18">
     <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
@@ -24,10 +31,33 @@ const FEATURES = [
 
 export default function AuthScreen({ onSignIn }) {
   const [visible, setVisible] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
     setTimeout(() => setVisible(true), 100);
+
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Hide button if already running as installed PWA
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setInstalled(true);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') setInstalled(true);
+    setInstallPrompt(null);
+  };
 
   return (
     <div style={styles.container}>
@@ -57,6 +87,13 @@ export default function AuthScreen({ onSignIn }) {
           <GoogleIcon />
           <span>Iniciar sesión con Google</span>
         </button>
+
+        {!installed && installPrompt && (
+          <button onClick={handleInstall} style={styles.installBtn}>
+            <InstallIcon />
+            <span>Instalar app</span>
+          </button>
+        )}
 
         <p style={styles.note}>Se requiere acceso a Google Drive para guardar y organizar tus fotos.</p>
       </div>
@@ -99,6 +136,13 @@ const styles = {
     padding: `${spacing.md}px ${spacing.xxl}px`, borderRadius: radius.md,
     border: `1px solid ${colors.borderLight}`, background: colors.bgInput,
     color: colors.textWhite, fontSize: font.lg, fontWeight: 500,
+    cursor: 'pointer', width: '100%', maxWidth: 280, justifyContent: 'center',
+  },
+  installBtn: {
+    display: 'flex', alignItems: 'center', gap: spacing.sm + 2,
+    padding: `${spacing.sm + 2}px ${spacing.xxl}px`, borderRadius: radius.md,
+    border: `1px solid ${colors.border}`, background: 'transparent',
+    color: colors.textMuted, fontSize: font.base, fontWeight: 500,
     cursor: 'pointer', width: '100%', maxWidth: 280, justifyContent: 'center',
   },
   note: { fontSize: font.sm, color: colors.textDim, textAlign: 'center' },
