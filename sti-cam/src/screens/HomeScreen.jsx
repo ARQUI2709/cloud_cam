@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { colors, font, spacing, radius, globalStyles } from '../styles/theme';
 import { getProject as getProjectById } from '../config/projects';
 import { getProjectFolderId, listFiles, deleteFile } from '../infrastructure/GoogleDrive';
@@ -13,6 +13,35 @@ import shareImg from '../assets/share.png';
 import infoImg from '../assets/info.png';
 import deleteImg from '../assets/delete.png';
 import logoutImg from '../assets/logout.png';
+
+/**
+ * Loads a Drive image using the current user's OAuth token.
+ * Avoids 403 errors caused by signed thumbnailLink URLs that are user-specific.
+ */
+const DriveImage = memo(function DriveImage({ fileId, size = 400, style, alt = '', loading = 'lazy' }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    let revoked = false;
+    let objectUrl = null;
+    getAccessToken().then((token) =>
+      fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).then((res) => res.blob())
+      .then((blob) => {
+        if (!revoked) {
+          objectUrl = URL.createObjectURL(blob);
+          setSrc(objectUrl);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      revoked = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [fileId]);
+  return <img src={src || ''} alt={alt} style={style} loading={loading} />;
+});
 
 const CamIconSmall = () => (
   <img src={cameraImg} alt="STI Cam" style={{ width: 36, height: 36, objectFit: 'contain' }} />
@@ -87,15 +116,6 @@ export default function HomeScreen({
     return () => { cancelled = true; };
   }, [selectedProject, refreshTick]);
 
-  const getThumbnailUrl = (photo) => {
-    if (photo.thumbnailLink) return photo.thumbnailLink.replace(/=s\d+/, '=s400');
-    return `https://drive.google.com/thumbnail?id=${photo.id}&sz=w400`;
-  };
-
-  const getFullUrl = (photo) => {
-    if (photo.thumbnailLink) return photo.thumbnailLink.replace(/=s\d+/, '=s1200');
-    return `https://drive.google.com/thumbnail?id=${photo.id}&sz=w1200`;
-  };
 
   const handleShare = async (photo) => {
     setSharing(true);
@@ -287,7 +307,7 @@ export default function HomeScreen({
                   const idx = photos.indexOf(photo);
                   return (
                     <div key={photo.id} onClick={() => setViewerIndex(idx)} style={styles.gridItem}>
-                      <img src={getThumbnailUrl(photo)} alt="" style={styles.gridImg} loading="lazy" referrerPolicy="no-referrer" />
+                      <DriveImage fileId={photo.id} style={styles.gridImg} loading="lazy" />
                     </div>
                   );
                 })}
@@ -327,12 +347,11 @@ export default function HomeScreen({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            <img
+            <DriveImage
               key={photos[viewerIndex].id}
-              src={getFullUrl(photos[viewerIndex])}
-              alt={photos[viewerIndex].name}
+              fileId={photos[viewerIndex].id}
               style={styles.viewerImg}
-              referrerPolicy="no-referrer"
+              alt={photos[viewerIndex].name}
             />
           </div>
 
@@ -347,13 +366,7 @@ export default function HomeScreen({
                   ...(idx === viewerIndex ? styles.thumbItemActive : {}),
                 }}
               >
-                <img
-                  src={getThumbnailUrl(photo)}
-                  alt=""
-                  style={styles.thumbItemImg}
-                  referrerPolicy="no-referrer"
-                  loading="lazy"
-                />
+                <DriveImage fileId={photo.id} style={styles.thumbItemImg} loading="lazy" />
               </div>
             ))}
           </div>
