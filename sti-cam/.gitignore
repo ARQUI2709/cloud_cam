@@ -5,3 +5,4 @@ dist
 .DS_Store
 *.log
 GOOGLE_CLOUD_SETUP.md
+NATIVE_APP_GUIDE.md
