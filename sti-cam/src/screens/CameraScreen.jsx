@@ -91,6 +91,7 @@ export default function CameraScreen({
     const photo = createPhoto({
       blob,
       projectId: project,
+      projectName: projectInfo?.name,
       sessionNumber: num,
       location: lastLocation.current,
       captureInfo: camera.getCaptureInfo(),
@@ -122,6 +123,7 @@ export default function CameraScreen({
       const photo = createPhoto({
         blob,
         projectId: project,
+        projectName: projectInfo?.name,
         sessionNumber: sessionCount + i + 1,
         sourceDate: file.lastModified,   // preserve original file date
         sourceName: file.name,           // preserve original file name
