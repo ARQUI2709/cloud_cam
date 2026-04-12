@@ -29,19 +29,19 @@ import logoutImg from '../assets/logout.png';
  */
 const DriveImage = memo(function DriveImage({
   fileId, thumbUrl, thumbnail = false,
-  style, alt = '', loading = 'lazy', imgRef,
+  style, alt = '', loading = 'eager', imgRef, onLoad,
 }) {
   const [src, setSrc] = useState(thumbnail && thumbUrl ? thumbUrl : null);
 
   useEffect(() => {
     if (thumbnail && thumbUrl) {
-      // thumbnailLink is a signed URL — use directly, no auth needed
       setSrc(thumbUrl);
       return;
     }
     // Full-resolution authenticated fetch (also fallback when no thumbnailLink)
     let revoked = false;
     let objectUrl = null;
+    setSrc(null); // clear previous photo while loading
     getAccessToken().then((token) =>
       fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -60,7 +60,7 @@ const DriveImage = memo(function DriveImage({
     };
   }, [fileId, thumbnail, thumbUrl]);
 
-  return <img ref={imgRef} src={src || ''} alt={alt} style={style} loading={loading} />;
+  return <img ref={imgRef} src={src || ''} alt={alt} style={style} loading={loading} onLoad={onLoad} />;
 });
 
 const CamIconSmall = () => (
@@ -108,6 +108,7 @@ export default function HomeScreen({
   const [deleting, setDeleting] = useState(false);
   const [confirmDeletePhoto, setConfirmDeletePhoto] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
   const thumbStripRef = useRef(null);
   const viewerImgRef = useRef(null);
 
@@ -146,8 +147,9 @@ export default function HomeScreen({
     snapTransform(1, 0, 0);
   }, [snapTransform]);
 
-  // Reset zoom whenever the viewed photo changes
+  // Reset zoom and show spinner whenever the viewed photo changes
   useEffect(() => {
+    if (viewerIndex !== null) setViewerLoading(true);
     resetZoom();
   }, [viewerIndex, resetZoom]);
 
@@ -627,7 +629,14 @@ export default function HomeScreen({
               style={styles.viewerImg}
               alt={photos[viewerIndex].name}
               imgRef={viewerImgRef}
+              loading="eager"
+              onLoad={() => setViewerLoading(false)}
             />
+            {viewerLoading && (
+              <div style={styles.viewerSpinner}>
+                <div style={styles.spinner} />
+              </div>
+            )}
           </div>
 
           {/* Tira de thumbnails */}
@@ -952,8 +961,14 @@ const styles = {
     fontSize: font.xs, color: colors.textMuted,
   },
   viewerBody: {
+    position: 'relative',
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden', touchAction: 'none',
+  },
+  viewerSpinner: {
+    position: 'absolute', inset: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    pointerEvents: 'none',
   },
   viewerImg: {
     maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
