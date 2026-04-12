@@ -5,6 +5,12 @@ import { GOOGLE_CLIENT_ID } from '../config/google';
 /**
  * Hook de autenticación con Google.
  * Maneja login, logout, y estado del usuario.
+ *
+ * Offline behaviour:
+ * - If a saved session exists and the device is offline, restore the user
+ *   immediately without loading the GIS script (which requires network).
+ * - initAuth() is retried silently when the device comes back online so that
+ *   the token client is ready for the next upload sync.
  */
 export function useAuth() {
   const [user, setUser] = useState(null);
@@ -19,14 +25,31 @@ export function useAuth() {
       setLoading(false);
       return;
     }
+
+    const saved = getSavedUser();
+
+    // Offline with a known session — restore immediately, skip GIS load
+    if (!navigator.onLine && saved) {
+      setUser(saved);
+      setLoading(false);
+      // Retry initAuth silently when connectivity returns
+      const onOnline = () => initAuth().catch(() => {});
+      window.addEventListener('online', onOnline, { once: true });
+      return () => window.removeEventListener('online', onOnline);
+    }
+
     initAuth()
       .then(() => {
-        const saved = getSavedUser();
         if (saved) setUser(saved);
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.message);
+        // GIS script failed to load — if we have a saved session still let them in
+        if (saved) {
+          setUser(saved);
+        } else {
+          setError(err.message);
+        }
         setLoading(false);
       });
   }, [isConfigured]);

@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { useUploadQueue } from './hooks/useUploadQueue';
 import { CameraService } from './infrastructure/CameraService';
 import { loadQueue } from './infrastructure/OfflineQueue';
-import { hasValidToken, getAccessToken } from './infrastructure/GoogleAuth';
+import { hasValidToken, getAccessToken, getSavedUser } from './infrastructure/GoogleAuth';
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import CameraScreen from './screens/CameraScreen';
@@ -16,6 +16,7 @@ export default function App() {
   const [queue, setQueue] = useState([]);
   const [sessionCount, setSessionCount] = useState(0);
   const [offlineBanner, setOfflineBanner] = useState(null); // null | { count, needsAuth }
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   const addToQueue = useCallback((item) => {
     setQueue((prev) => {
@@ -66,11 +67,16 @@ export default function App() {
     if (navigator.onLine) syncOfflineQueue();
   }, [auth.isAuthenticated]); // re-run when user logs in
 
-  // On reconnect: flush or show banner
+  // Track online/offline state and flush queue on reconnect
   useEffect(() => {
-    const handle = () => syncOfflineQueue();
-    window.addEventListener('online', handle);
-    return () => window.removeEventListener('online', handle);
+    const onOnline = () => { setIsOffline(false); syncOfflineQueue(); };
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
   }, [syncOfflineQueue]);
 
   const handleReconnect = useCallback(async () => {
@@ -85,7 +91,7 @@ export default function App() {
   }, [offlineBanner, retryOfflineQueue, addToQueue]);
 
   if (!auth.isAuthenticated) {
-    return <AuthScreen onSignIn={auth.signIn} />;
+    return <AuthScreen onSignIn={auth.signIn} savedUser={getSavedUser()} isOffline={isOffline} />;
   }
 
   const screen = activeScreen === 'camera' && selectedProject

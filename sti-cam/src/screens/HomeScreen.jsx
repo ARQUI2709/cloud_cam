@@ -18,7 +18,7 @@ import logoutImg from '../assets/logout.png';
  * Loads a Drive image using the current user's OAuth token.
  * Avoids 403 errors caused by signed thumbnailLink URLs that are user-specific.
  */
-const DriveImage = memo(function DriveImage({ fileId, size = 400, style, alt = '', loading = 'lazy' }) {
+const DriveImage = memo(function DriveImage({ fileId, size = 400, style, alt = '', loading = 'lazy', imgRef }) {
   const [src, setSrc] = useState(null);
   useEffect(() => {
     let revoked = false;
@@ -40,7 +40,7 @@ const DriveImage = memo(function DriveImage({ fileId, size = 400, style, alt = '
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [fileId]);
-  return <img src={src || ''} alt={alt} style={style} loading={loading} />;
+  return <img ref={imgRef} src={src || ''} alt={alt} style={style} loading={loading} />;
 });
 
 const CamIconSmall = () => (
@@ -88,9 +88,158 @@ export default function HomeScreen({
   const [deleting, setDeleting] = useState(false);
   const [confirmDeletePhoto, setConfirmDeletePhoto] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
-  const touchStartX = useRef(0);
-  const touchDelta = useRef(0);
   const thumbStripRef = useRef(null);
+  const viewerImgRef = useRef(null);
+
+  // Zoom / pan / swipe gesture state (all in refs — no re-render during gesture)
+  const gesture = useRef({
+    // current transform
+    scale: 1, tx: 0, ty: 0,
+    // swipe tracking (1-finger, only when scale === 1)
+    swipeStartX: 0, swipeDelta: 0,
+    // pinch tracking
+    pinchStartDist: 0, pinchStartScale: 1,
+    pinchMidX: 0, pinchMidY: 0,
+    // pan tracking (1-finger while zoomed)
+    panStartX: 0, panStartY: 0, panStartTx: 0, panStartTy: 0,
+    // double-tap
+    lastTap: 0,
+  });
+
+  const applyTransform = useCallback((scale, tx, ty) => {
+    const img = viewerImgRef.current;
+    if (!img) return;
+    img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    img.style.transition = 'none';
+  }, []);
+
+  const snapTransform = useCallback((scale, tx, ty) => {
+    const img = viewerImgRef.current;
+    if (!img) return;
+    img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    img.style.transition = 'transform 0.2s ease';
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    const g = gesture.current;
+    g.scale = 1; g.tx = 0; g.ty = 0;
+    snapTransform(1, 0, 0);
+  }, [snapTransform]);
+
+  // Reset zoom whenever the viewed photo changes
+  useEffect(() => {
+    resetZoom();
+  }, [viewerIndex, resetZoom]);
+
+  const clampPan = useCallback((scale, tx, ty) => {
+    const img = viewerImgRef.current;
+    if (!img) return { tx, ty };
+    const rect = img.parentElement?.getBoundingClientRect();
+    if (!rect) return { tx, ty };
+    const maxTx = (rect.width  * (scale - 1)) / 2;
+    const maxTy = (rect.height * (scale - 1)) / 2;
+    return {
+      tx: Math.max(-maxTx, Math.min(maxTx, tx)),
+      ty: Math.max(-maxTy, Math.min(maxTy, ty)),
+    };
+  }, []);
+
+  const handleTouchStart = useCallback((e) => {
+    const g = gesture.current;
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      if (g.scale <= 1) {
+        // swipe navigation
+        g.swipeStartX = t.clientX;
+        g.swipeDelta = 0;
+      } else {
+        // pan while zoomed
+        g.panStartX = t.clientX;
+        g.panStartY = t.clientY;
+        g.panStartTx = g.tx;
+        g.panStartTy = g.ty;
+      }
+      // double-tap detection
+      const now = Date.now();
+      if (now - g.lastTap < 300) {
+        if (g.scale > 1) {
+          resetZoom();
+        } else {
+          const newScale = 2.5;
+          const clamped = clampPan(newScale, 0, 0);
+          g.scale = newScale; g.tx = clamped.tx; g.ty = clamped.ty;
+          snapTransform(newScale, clamped.tx, clamped.ty);
+        }
+        g.lastTap = 0;
+        return;
+      }
+      g.lastTap = now;
+    } else if (e.touches.length === 2) {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      g.pinchStartDist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+      g.pinchStartScale = g.scale;
+      g.pinchMidX = (a.clientX + b.clientX) / 2;
+      g.pinchMidY = (a.clientY + b.clientY) / 2;
+    }
+  }, [resetZoom, snapTransform, clampPan]);
+
+  const handleTouchMove = useCallback((e) => {
+    const g = gesture.current;
+    if (e.touches.length === 1) {
+      if (g.scale <= 1) {
+        g.swipeDelta = e.touches[0].clientX - g.swipeStartX;
+      } else {
+        const dx = e.touches[0].clientX - g.panStartX;
+        const dy = e.touches[0].clientY - g.panStartY;
+        const clamped = clampPan(g.scale, g.panStartTx + dx, g.panStartTy + dy);
+        g.tx = clamped.tx; g.ty = clamped.ty;
+        applyTransform(g.scale, g.tx, g.ty);
+      }
+    } else if (e.touches.length === 2) {
+      e.preventDefault();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+      const newScale = Math.min(4, Math.max(1, g.pinchStartScale * (dist / g.pinchStartDist)));
+      const clamped = clampPan(newScale, g.tx, g.ty);
+      g.scale = newScale; g.tx = clamped.tx; g.ty = clamped.ty;
+      applyTransform(newScale, clamped.tx, clamped.ty);
+    }
+  }, [applyTransform, clampPan]);
+
+  const handleTouchEnd = useCallback((e) => {
+    const g = gesture.current;
+    if (e.touches.length === 0 && g.scale <= 1) {
+      const threshold = 60;
+      if (g.swipeDelta > threshold && viewerIndex > 0) {
+        setViewerIndex(viewerIndex - 1);
+      } else if (g.swipeDelta < -threshold && viewerIndex < photos.length - 1) {
+        setViewerIndex(viewerIndex + 1);
+      }
+      g.swipeDelta = 0;
+    }
+    // Snap back to 1× if pinch released below threshold
+    if (e.touches.length < 2 && g.scale < 1.1) {
+      resetZoom();
+    }
+  }, [viewerIndex, photos.length, resetZoom]);
+
+  // Multi-select
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [confirmDeleteSelected, setConfirmDeleteSelected] = useState(false);
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
 
   useEffect(() => {
     if (!selectedProject || !project || !GOOGLE_CLIENT_ID) {
@@ -120,19 +269,17 @@ export default function HomeScreen({
   const handleShare = async (photo) => {
     setSharing(true);
     try {
-      // Download actual file from Drive API
       const token = await getAccessToken();
       const res = await fetch(
         `https://www.googleapis.com/drive/v3/files/${photo.id}?alt=media`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const blob = await res.blob();
-      const file = new File([blob], 'foto.jpg', { type: 'image/jpeg' });
+      const file = new File([blob], photo.name || 'foto.jpg', { type: 'image/jpeg' });
 
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file] });
       } else if (navigator.share) {
-        // Fallback: share link if file sharing not supported
         const shareUrl = photo.webViewLink || `https://drive.google.com/file/d/${photo.id}/view`;
         await navigator.share({ url: shareUrl });
       } else {
@@ -150,13 +297,10 @@ export default function HomeScreen({
     try {
       await deleteFile(photo.id);
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-      // Adjust viewer index
       if (viewerIndex >= photos.length - 1) {
         setViewerIndex(photos.length > 1 ? photos.length - 2 : null);
       }
       setConfirmDeletePhoto(false);
-
-      // Remove row from project sheet (non-critical)
       if (project) {
         try {
           const folderId = await getProjectFolderId(project.name);
@@ -172,24 +316,66 @@ export default function HomeScreen({
     setDeleting(false);
   };
 
-  const handleTouchStart = useCallback((e) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchDelta.current = 0;
-  }, []);
+  // --- Multi-select handlers ---
 
-  const handleTouchMove = useCallback((e) => {
-    touchDelta.current = e.touches[0].clientX - touchStartX.current;
-  }, []);
+  const handleShareSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setSharing(true);
+    try {
+      const token = await getAccessToken();
+      const selected = photos.filter((p) => selectedIds.has(p.id));
+      const files = await Promise.all(
+        selected.map(async (photo) => {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${photo.id}?alt=media`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          const blob = await res.blob();
+          return new File([blob], photo.name || 'foto.jpg', { type: 'image/jpeg' });
+        })
+      );
+      if (navigator.canShare?.({ files })) {
+        await navigator.share({ files });
+      } else {
+        // Fallback: share links as text
+        const links = selected
+          .map((p) => p.webViewLink || `https://drive.google.com/file/d/${p.id}/view`)
+          .join('\n');
+        if (navigator.share) {
+          await navigator.share({ text: links });
+        } else {
+          await navigator.clipboard.writeText(links);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }
+      }
+    } catch { /* user cancelled or error */ }
+    setSharing(false);
+  };
 
-  const handleTouchEnd = useCallback(() => {
-    const threshold = 60;
-    if (touchDelta.current > threshold && viewerIndex > 0) {
-      setViewerIndex(viewerIndex - 1);
-    } else if (touchDelta.current < -threshold && viewerIndex < photos.length - 1) {
-      setViewerIndex(viewerIndex + 1);
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setDeleting(true);
+    try {
+      const ids = [...selectedIds];
+      await Promise.all(ids.map((id) => deleteFile(id)));
+      setPhotos((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+      if (project) {
+        try {
+          const folderId = await getProjectFolderId(project.name);
+          const spreadsheetId = await getOrCreateSheet(project.name, folderId);
+          await Promise.all(ids.map((id) => removePhotoRow(spreadsheetId, id)));
+        } catch (sheetErr) {
+          console.warn('Sheet row removal failed (non-critical):', sheetErr);
+        }
+      }
+      exitSelectMode();
+      setConfirmDeleteSelected(false);
+    } catch (e) {
+      console.error('[gallery] bulk delete failed:', e);
     }
-    touchDelta.current = 0;
-  }, [viewerIndex, photos.length]);
+    setDeleting(false);
+  };
 
   // Scroll thumbnail strip to keep active thumb visible
   useEffect(() => {
@@ -273,20 +459,36 @@ export default function HomeScreen({
       {selectedProject && (
         <div style={styles.gallerySection}>
           <div style={styles.gallerySectionHeader}>
-            <label style={styles.label}>FOTOS DEL PROYECTO</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {photos.length > 0 && (
-                <span style={styles.photoCount}>{photos.length} fotos</span>
-              )}
-              <button
-                onClick={() => setRefreshTick((t) => t + 1)}
-                disabled={loadingPhotos}
-                style={styles.refreshBtn}
-                title="Actualizar galería"
-              >
-                {loadingPhotos ? '...' : '↻'}
-              </button>
-            </div>
+            {selectMode ? (
+              <>
+                <span style={styles.label}>
+                  {selectedIds.size > 0 ? `${selectedIds.size} seleccionada${selectedIds.size !== 1 ? 's' : ''}` : 'Seleccionar fotos'}
+                </span>
+                <button onClick={exitSelectMode} style={styles.selectToggleBtn}>Cancelar</button>
+              </>
+            ) : (
+              <>
+                <label style={styles.label}>FOTOS DEL PROYECTO</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {photos.length > 0 && (
+                    <span style={styles.photoCount}>{photos.length} fotos</span>
+                  )}
+                  {photos.length > 0 && (
+                    <button onClick={() => setSelectMode(true)} style={styles.selectToggleBtn}>
+                      Seleccionar
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setRefreshTick((t) => t + 1)}
+                    disabled={loadingPhotos}
+                    style={styles.refreshBtn}
+                    title="Actualizar galería"
+                  >
+                    {loadingPhotos ? '...' : '↻'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {loadingPhotos && (
@@ -305,15 +507,67 @@ export default function HomeScreen({
               <div style={styles.grid}>
                 {groupPhotos.map((photo) => {
                   const idx = photos.indexOf(photo);
+                  const isSelected = selectedIds.has(photo.id);
                   return (
-                    <div key={photo.id} onClick={() => setViewerIndex(idx)} style={styles.gridItem}>
+                    <div
+                      key={photo.id}
+                      onClick={() => selectMode ? toggleSelect(photo.id) : setViewerIndex(idx)}
+                      style={{
+                        ...styles.gridItem,
+                        ...(isSelected ? styles.gridItemSelected : {}),
+                      }}
+                    >
                       <DriveImage fileId={photo.id} style={styles.gridImg} loading="lazy" />
+                      {selectMode && (
+                        <div style={{ ...styles.checkOverlay, ...(isSelected ? styles.checkOverlayActive : {}) }}>
+                          {isSelected && <div style={styles.checkMark}>✓</div>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Multi-select action bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div style={styles.selectionBar}>
+          <button
+            onClick={handleShareSelected}
+            disabled={sharing}
+            style={styles.selectionAction}
+          >
+            {sharing ? '...' : `Compartir ${selectedIds.size}`}
+          </button>
+          <button
+            onClick={() => setConfirmDeleteSelected(true)}
+            style={{ ...styles.selectionAction, ...styles.selectionActionDelete }}
+          >
+            {`Eliminar ${selectedIds.size}`}
+          </button>
+        </div>
+      )}
+
+      {/* Bulk delete confirmation */}
+      {confirmDeleteSelected && (
+        <div style={styles.logoutOverlay}>
+          <div style={styles.logoutDialog}>
+            <p style={styles.logoutText}>Eliminar {selectedIds.size} foto{selectedIds.size !== 1 ? 's' : ''}?</p>
+            <p style={styles.logoutSubtext}>Se eliminarán de Google Drive</p>
+            <div style={styles.logoutActions}>
+              <button onClick={() => setConfirmDeleteSelected(false)} style={styles.logoutCancel}>Cancelar</button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={deleting}
+                style={styles.logoutConfirm}
+              >
+                {deleting ? '...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -340,7 +594,7 @@ export default function HomeScreen({
             <div style={{ width: 36 }} />
           </div>
 
-          {/* Foto principal con swipe */}
+          {/* Foto principal con swipe + pinch zoom */}
           <div
             style={styles.viewerBody}
             onTouchStart={handleTouchStart}
@@ -352,6 +606,7 @@ export default function HomeScreen({
               fileId={photos[viewerIndex].id}
               style={styles.viewerImg}
               alt={photos[viewerIndex].name}
+              imgRef={viewerImgRef}
             />
           </div>
 
@@ -639,7 +894,7 @@ const styles = {
     padding: '0 2px',
   },
   gridItem: {
-    aspectRatio: '1', overflow: 'hidden', cursor: 'pointer',
+    position: 'relative', aspectRatio: '1', overflow: 'hidden', cursor: 'pointer',
     background: colors.bgCard,
   },
   gridImg: {
@@ -678,11 +933,13 @@ const styles = {
   },
   viewerBody: {
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden', touchAction: 'pan-x',
+    overflow: 'hidden', touchAction: 'none',
   },
   viewerImg: {
     maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
     userSelect: 'none', pointerEvents: 'none',
+    transformOrigin: 'center center',
+    willChange: 'transform',
   },
   thumbStrip: {
     display: 'flex', flexDirection: 'row', gap: 3,
@@ -776,5 +1033,50 @@ const styles = {
     background: colors.bgInput, border: 'none',
     color: colors.text, fontSize: font.base,
     cursor: 'pointer', fontFamily: font.family,
+  },
+  // Select mode
+  selectToggleBtn: {
+    fontSize: font.sm, fontWeight: 600, color: colors.accent,
+    background: 'none', border: 'none', cursor: 'pointer',
+    padding: '4px 0', fontFamily: font.family,
+  },
+  gridItemSelected: {
+    opacity: 0.75,
+  },
+  checkOverlay: {
+    position: 'absolute', inset: 0,
+    border: '2px solid transparent', borderRadius: 0,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
+    padding: 4, pointerEvents: 'none',
+  },
+  checkOverlayActive: {
+    border: `2px solid ${colors.accent}`,
+    background: 'rgba(99,102,241,0.15)',
+  },
+  checkMark: {
+    width: 20, height: 20, borderRadius: '50%',
+    background: colors.accent, color: 'white',
+    fontSize: 11, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  selectionBar: {
+    position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+    display: 'flex', gap: 10,
+    padding: '12px 16px',
+    paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
+    background: '#1e1d24',
+    borderTop: `1px solid ${colors.border}`,
+    maxWidth: 480, margin: '0 auto',
+  },
+  selectionAction: {
+    flex: 1, padding: '12px', borderRadius: radius.md,
+    background: colors.bgInput, border: `1px solid ${colors.borderLight}`,
+    color: colors.textWhite, fontSize: font.base, fontWeight: 600,
+    cursor: 'pointer', fontFamily: font.family,
+  },
+  selectionActionDelete: {
+    background: 'rgba(239,68,68,0.12)',
+    border: `1px solid rgba(239,68,68,0.3)`,
+    color: colors.error,
   },
 };

@@ -29,7 +29,13 @@ const FEATURES = [
   { text: 'Modo continuo — tap, tap, tap', icon: imagesImg },
 ];
 
-export default function AuthScreen({ onSignIn }) {
+/**
+ * AuthScreen receives:
+ *   onSignIn     — triggers Google OAuth popup (requires network)
+ *   savedUser    — user info from localStorage (available offline)
+ *   isOffline    — true when navigator.onLine === false
+ */
+export default function AuthScreen({ onSignIn, savedUser, isOffline }) {
   const [visible, setVisible] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
@@ -43,7 +49,6 @@ export default function AuthScreen({ onSignIn }) {
     };
     window.addEventListener('beforeinstallprompt', handler);
 
-    // Hide button if already running as installed PWA
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setInstalled(true);
     }
@@ -58,6 +63,9 @@ export default function AuthScreen({ onSignIn }) {
     if (outcome === 'accepted') setInstalled(true);
     setInstallPrompt(null);
   };
+
+  // Offline + known session: show identity confirmation instead of sign-in button
+  const showOfflineResume = isOffline && !!savedUser;
 
   return (
     <div style={styles.container}>
@@ -74,28 +82,46 @@ export default function AuthScreen({ onSignIn }) {
           <p style={styles.subtitle}>Registro fotográfico de obra</p>
         </div>
 
-        <div style={styles.features}>
-          {FEATURES.map((f, i) => (
-            <div key={i} style={styles.featureRow}>
-              <img src={f.icon} alt="" style={styles.featureIcon} />
-              <span style={styles.featureText}>{f.text}</span>
+        {showOfflineResume ? (
+          <>
+            <div style={styles.offlineCard}>
+              <div style={styles.offlineDot} />
+              <div style={styles.offlineInfo}>
+                <span style={styles.offlineName}>{savedUser.name}</span>
+                <span style={styles.offlineEmail}>{savedUser.email}</span>
+              </div>
             </div>
-          ))}
-        </div>
+            <button onClick={onSignIn} style={styles.btn}>
+              <span>Continuar sin conexión</span>
+            </button>
+            <p style={styles.note}>Las fotos se guardarán localmente y se subirán cuando haya conexión.</p>
+          </>
+        ) : (
+          <>
+            <div style={styles.features}>
+              {FEATURES.map((f, i) => (
+                <div key={i} style={styles.featureRow}>
+                  <img src={f.icon} alt="" style={styles.featureIcon} />
+                  <span style={styles.featureText}>{f.text}</span>
+                </div>
+              ))}
+            </div>
 
-        <button onClick={onSignIn} style={styles.btn}>
-          <GoogleIcon />
-          <span>Iniciar sesión con Google</span>
-        </button>
+            <button onClick={onSignIn} style={styles.btn}>
+              <GoogleIcon />
+              <span>Iniciar sesión con Google</span>
+            </button>
 
-        {!installed && installPrompt && (
-          <button onClick={handleInstall} style={styles.installBtn}>
-            <InstallIcon />
-            <span>Instalar app</span>
-          </button>
+            {!installed && installPrompt && (
+              <button onClick={handleInstall} style={styles.installBtn}>
+                <InstallIcon />
+                <span>Instalar app</span>
+              </button>
+            )}
+
+            <p style={styles.note}>Se requiere acceso a Google Drive para guardar y organizar tus fotos.</p>
+          </>
         )}
-
-        <p style={styles.note}>Se requiere acceso a Google Drive para guardar y organizar tus fotos.</p>
       </div>
       <Footer />
     </div>
@@ -144,6 +170,27 @@ const styles = {
     border: `1px solid ${colors.border}`, background: 'transparent',
     color: colors.textMuted, fontSize: font.base, fontWeight: 500,
     cursor: 'pointer', width: '100%', maxWidth: 280, justifyContent: 'center',
+  },
+  offlineCard: {
+    display: 'flex', alignItems: 'center', gap: spacing.md,
+    background: colors.bgInput, border: `1px solid ${colors.border}`,
+    borderRadius: radius.md, padding: `${spacing.md}px ${spacing.lg}px`,
+    width: '100%', maxWidth: 280,
+  },
+  offlineDot: {
+    width: 8, height: 8, borderRadius: '50%',
+    background: colors.textDim, flexShrink: 0,
+  },
+  offlineInfo: {
+    display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden',
+  },
+  offlineName: {
+    fontSize: font.base, fontWeight: 600, color: colors.textWhite,
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  },
+  offlineEmail: {
+    fontSize: font.sm, color: colors.textMuted,
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
   note: { fontSize: font.sm, color: colors.textDim, textAlign: 'center' },
 };
