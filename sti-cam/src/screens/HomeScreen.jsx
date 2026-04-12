@@ -18,9 +18,28 @@ import logoutImg from '../assets/logout.png';
  * Loads a Drive image using the current user's OAuth token.
  * Avoids 403 errors caused by signed thumbnailLink URLs that are user-specific.
  */
-const DriveImage = memo(function DriveImage({ fileId, size = 400, style, alt = '', loading = 'lazy', imgRef }) {
-  const [src, setSrc] = useState(null);
+/**
+ * DriveImage — two modes:
+ *
+ * thumbnail=true  → uses thumbnailLink directly (signed URL, no auth, ~50KB).
+ *                   Fast for grids. Requires the `thumbUrl` prop.
+ *
+ * thumbnail=false → downloads the full file via authenticated fetch.
+ *                   Used only for the full-screen viewer.
+ */
+const DriveImage = memo(function DriveImage({
+  fileId, thumbUrl, thumbnail = false,
+  style, alt = '', loading = 'lazy', imgRef,
+}) {
+  const [src, setSrc] = useState(thumbnail && thumbUrl ? thumbUrl : null);
+
   useEffect(() => {
+    if (thumbnail && thumbUrl) {
+      // thumbnailLink is a signed URL — use directly, no auth needed
+      setSrc(thumbUrl);
+      return;
+    }
+    // Full-resolution authenticated fetch (also fallback when no thumbnailLink)
     let revoked = false;
     let objectUrl = null;
     getAccessToken().then((token) =>
@@ -39,7 +58,8 @@ const DriveImage = memo(function DriveImage({ fileId, size = 400, style, alt = '
       revoked = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [fileId]);
+  }, [fileId, thumbnail, thumbUrl]);
+
   return <img ref={imgRef} src={src || ''} alt={alt} style={style} loading={loading} />;
 });
 
@@ -517,7 +537,7 @@ export default function HomeScreen({
                         ...(isSelected ? styles.gridItemSelected : {}),
                       }}
                     >
-                      <DriveImage fileId={photo.id} style={styles.gridImg} loading="lazy" />
+                      <DriveImage fileId={photo.id} thumbUrl={photo.thumbnailLink} thumbnail style={styles.gridImg} loading="lazy" />
                       {selectMode && (
                         <div style={{ ...styles.checkOverlay, ...(isSelected ? styles.checkOverlayActive : {}) }}>
                           {isSelected && <div style={styles.checkMark}>✓</div>}
@@ -621,7 +641,7 @@ export default function HomeScreen({
                   ...(idx === viewerIndex ? styles.thumbItemActive : {}),
                 }}
               >
-                <DriveImage fileId={photo.id} style={styles.thumbItemImg} loading="lazy" />
+                <DriveImage fileId={photo.id} thumbUrl={photo.thumbnailLink} thumbnail style={styles.thumbItemImg} loading="lazy" />
               </div>
             ))}
           </div>
