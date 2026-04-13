@@ -164,21 +164,61 @@ export default function App() {
     };
   }, [syncWithRetry]);
 
-  const handleReconnect = useCallback(async () => {
-    if (!offlineBanner) return;
+  // Periodic safety-net: every 30s, if there are still items in IDB and we're
+  // online + authenticated, attempt another silent flush. This catches the case
+  // where the 'online' event never fired (PWA on mobile is unreliable) or where
+  // the initial retry burst failed because the network wasn't ready yet.
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
+    const interval = setInterval(async () => {
+      if (!navigator.onLine) return;
+      try {
+        const pending = await loadQueue();
+        if (pending.length === 0) return;
+        console.log(`[sync] periodic check — ${pending.length} items pending, attempting flush`);
+        syncOfflineQueue();
+      } catch (_) {}
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [auth.isAuthenticated, syncOfflineQueue]);
+
+  /**
+   * Manual retry triggered by user gesture (Reintentar button or banner).
+   * Always attempts to flush IDB, forcing a popup-based token refresh if the
+   * current token is invalid — this works around PWA cookie restrictions that
+   * make silent renewal fail.
+   */
+  const manualRetry = useCallback(async () => {
+    if (!navigator.onLine) {
+      console.log('[sync] manualRetry — still offline, skipping');
+      return;
+    }
+    let pending;
+    try { pending = await loadQueue(); } catch { return; }
+    if (pending.length === 0) {
+      setOfflineBanner(null);
+      return;
+    }
     try {
-      console.log('[sync] user tapped Sincronizar — requesting fresh token');
+      console.log('[sync] manualRetry — user gesture, flushing', pending.length, 'items');
       if (!hasValidToken()) {
+        console.log('[sync] manualRetry — token invalid, requesting fresh via popup');
         await getAccessToken(true);
       }
-      await retryOfflineQueue(offlineBanner.items, addToQueue);
+      const currentQueue = queueRef.current;
+      const activeIds = new Set(
+        currentQueue
+          .filter((q) => q.status === 'uploading' || q.status === 'done')
+          .map((q) => q.id)
+      );
+      const fresh = pending.filter((p) => !activeIds.has(p.id));
+      await retryOfflineQueue(fresh, addToQueue);
       setOfflineBanner(null);
-      console.log('[sync] manual reconnect successful');
+      console.log('[sync] manualRetry complete');
     } catch (e) {
-      console.warn('[sync] manual reconnect failed:', e);
-      // User cancelled auth — keep banner
+      console.warn('[sync] manualRetry failed:', e);
     }
-  }, [offlineBanner, retryOfflineQueue, addToQueue]);
+  }, [retryOfflineQueue, addToQueue]);
 
   if (!auth.isAuthenticated) {
     return <AuthScreen onSignIn={auth.signIn} savedUser={getSavedUser()} isOffline={isOffline} />;
@@ -208,7 +248,7 @@ export default function App() {
         onOpenCamera={() => setActiveScreen('camera')}
         onSignOut={() => { CameraService.release(); auth.signOut(); }}
         offlineCount={offlineCount}
-        onRetrySync={syncWithRetry}
+        onRetrySync={manualRetry}
       />
     );
 
@@ -220,7 +260,7 @@ export default function App() {
           <span style={styles.bannerText}>
             {offlineBanner.count} foto{offlineBanner.count !== 1 ? 's' : ''} pendiente{offlineBanner.count !== 1 ? 's' : ''}
           </span>
-          <button onClick={handleReconnect} style={styles.bannerBtn}>
+          <button onClick={manualRetry} style={styles.bannerBtn}>
             Sincronizar
           </button>
           <button onClick={() => setOfflineBanner(null)} style={styles.bannerDismiss}>✕</button>
