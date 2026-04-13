@@ -36,55 +36,62 @@ export default function App() {
   const { retryOfflineQueue } = useUploadQueue({ updateQueueItem });
 
   /**
-   * Check IDB for pending photos and decide what to show.
-   * Called on mount (when online) and on every 'online' event.
+   * Check IDB for pending photos and show the sync banner if any are found.
+   * Never auto-triggers token refresh — that requires a user gesture on mobile.
+   * Called on mount, on 'online', and on 'visibilitychange' (catches missed events on mobile).
    */
   const syncOfflineQueue = useCallback(async () => {
-    if (!auth.isAuthenticated) return;
+    if (!auth.isAuthenticated || !navigator.onLine) return;
     let pending;
     try {
       pending = await loadQueue();
     } catch {
       return;
     }
-    // Only skip items that are actively uploading or already done — retry offline/error ones
+    // Only skip items actively uploading or already done — retry offline/error ones
     const activeIds = new Set(
       queue.filter((q) => q.status === 'uploading' || q.status === 'done').map((q) => q.id)
     );
     const fresh = pending.filter((p) => !activeIds.has(p.id));
     if (fresh.length === 0) return;
 
-    const tokenValid = hasValidToken();
-    if (tokenValid) {
-      // Silent flush — upload immediately
+    if (hasValidToken()) {
+      // Token still valid — silent flush (no popup needed)
       await retryOfflineQueue(fresh, addToQueue);
     } else {
-      // Need re-auth — show banner
+      // Token expired — show banner so user taps to trigger auth popup (required on mobile)
       setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
     }
   }, [auth.isAuthenticated, queue, retryOfflineQueue, addToQueue]);
 
-  // On mount: if online, try to flush any IDB queue from a previous session
+  // On mount: flush IDB queue if we're already online
   useEffect(() => {
     if (navigator.onLine) syncOfflineQueue();
   }, [auth.isAuthenticated]); // re-run when user logs in
 
-  // Track online/offline state and flush queue on reconnect
+  // Track online/offline + visibilitychange (mobile resumes miss the 'online' event)
   useEffect(() => {
     const onOnline = () => { setIsOffline(false); syncOfflineQueue(); };
     const onOffline = () => setIsOffline(true);
+    const onVisible = () => { if (!document.hidden) syncOfflineQueue(); };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [syncOfflineQueue]);
 
   const handleReconnect = useCallback(async () => {
     if (!offlineBanner) return;
     try {
-      await getAccessToken(false); // will prompt popup if expired
+      // Always request a fresh token here — this is a direct user tap so
+      // the popup is allowed on mobile browsers
+      if (!hasValidToken()) {
+        await getAccessToken(true);
+      }
       await retryOfflineQueue(offlineBanner.items, addToQueue);
       setOfflineBanner(null);
     } catch {
