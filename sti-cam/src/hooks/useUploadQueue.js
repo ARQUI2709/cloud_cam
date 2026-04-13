@@ -82,7 +82,7 @@ export function useUploadQueue({ updateQueueItem }) {
     for (const photo of photos) {
       // Restore blob URL for thumbnail display
       const thumbUrl = URL.createObjectURL(photo.blob);
-      addToQueue({
+      const queueItem = {
         id: photo.id,
         projectId: photo.projectId,
         name: photo.fileName,
@@ -90,14 +90,18 @@ export function useUploadQueue({ updateQueueItem }) {
         thumb: thumbUrl,
         status: 'pending',
         progress: 0,
-      });
+      };
+      // addToQueue deduplicates by id — for items already in state (status: 'offline')
+      // we need to reset their status so the UI reflects the retry
+      addToQueue(queueItem);
+      updateQueueItem(photo.id, { status: 'pending', progress: 0, error: undefined });
       await enqueueUpload({
         ...photo,
         thumbUrl,
         createdAt: new Date(photo.createdAt),
       });
     }
-  }, [enqueueUpload]);
+  }, [enqueueUpload, updateQueueItem]);
 
   return { enqueueUpload, retryOfflineQueue };
 }

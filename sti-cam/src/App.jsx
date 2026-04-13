@@ -47,9 +47,11 @@ export default function App() {
     } catch {
       return;
     }
-    // Filter out items already in React state (already being processed)
-    const inState = new Set(queue.map((q) => q.id));
-    const fresh = pending.filter((p) => !inState.has(p.id));
+    // Only skip items that are actively uploading or already done — retry offline/error ones
+    const activeIds = new Set(
+      queue.filter((q) => q.status === 'uploading' || q.status === 'done').map((q) => q.id)
+    );
+    const fresh = pending.filter((p) => !activeIds.has(p.id));
     if (fresh.length === 0) return;
 
     const tokenValid = hasValidToken();
