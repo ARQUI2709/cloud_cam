@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { useUploadQueue } from './hooks/useUploadQueue';
 import { CameraService } from './infrastructure/CameraService';
@@ -18,6 +18,10 @@ export default function App() {
   const [offlineBanner, setOfflineBanner] = useState(null); // null | { count, needsAuth }
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
+  // Keep a ref to queue so sync callbacks never see stale state
+  const queueRef = useRef(queue);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+
   const addToQueue = useCallback((item) => {
     setQueue((prev) => {
       // Avoid duplicates when retrying from IDB
@@ -35,45 +39,120 @@ export default function App() {
 
   const { retryOfflineQueue } = useUploadQueue({ updateQueueItem });
 
+  // Ref for retry timer so we can cancel it on cleanup
+  const retryTimerRef = useRef(null);
+
   /**
-   * Check IDB for pending photos and show the sync banner if any are found.
+   * Check IDB for pending photos and flush them.
+   * Uses queueRef instead of queue to avoid stale closure issues.
    * Never auto-triggers token refresh — that requires a user gesture on mobile.
-   * Called on mount, on 'online', and on 'visibilitychange' (catches missed events on mobile).
    */
   const syncOfflineQueue = useCallback(async () => {
-    if (!auth.isAuthenticated || !navigator.onLine) return;
+    console.log('[sync] syncOfflineQueue called', {
+      isAuthenticated: auth.isAuthenticated,
+      online: navigator.onLine,
+    });
+
+    if (!auth.isAuthenticated || !navigator.onLine) {
+      console.log('[sync] skipping — not authenticated or offline');
+      return;
+    }
+
     let pending;
     try {
       pending = await loadQueue();
-    } catch {
+      console.log('[sync] IDB queue loaded:', pending.length, 'items');
+    } catch (e) {
+      console.warn('[sync] failed to load IDB queue:', e);
       return;
     }
-    // Only skip items actively uploading or already done — retry offline/error ones
+
+    // Read from ref — never stale
+    const currentQueue = queueRef.current;
     const activeIds = new Set(
-      queue.filter((q) => q.status === 'uploading' || q.status === 'done').map((q) => q.id)
+      currentQueue
+        .filter((q) => q.status === 'uploading' || q.status === 'done')
+        .map((q) => q.id)
     );
     const fresh = pending.filter((p) => !activeIds.has(p.id));
+    console.log('[sync] activeIds:', activeIds.size, '| fresh to process:', fresh.length);
+
     if (fresh.length === 0) return;
 
     if (hasValidToken()) {
-      // Token still valid — silent flush (no popup needed)
-      await retryOfflineQueue(fresh, addToQueue);
+      console.log('[sync] token valid — flushing silently');
+      try {
+        await retryOfflineQueue(fresh, addToQueue);
+        console.log('[sync] flush complete');
+      } catch (e) {
+        console.warn('[sync] flush failed:', e);
+      }
     } else {
-      // Token expired — show banner so user taps to trigger auth popup (required on mobile)
+      console.log('[sync] token expired — showing banner for user action');
       setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
     }
-  }, [auth.isAuthenticated, queue, retryOfflineQueue, addToQueue]);
+  }, [auth.isAuthenticated, retryOfflineQueue, addToQueue]);
+  // Note: queue removed from deps — we read queueRef.current instead
+
+  /**
+   * Retry sync with exponential backoff.
+   * Handles the case where 'online' fires before DNS/routes are fully restored.
+   */
+  const syncWithRetry = useCallback(async () => {
+    const delays = [0, 2000, 5000, 10000]; // immediate, 2s, 5s, 10s
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      if (delays[attempt] > 0) {
+        console.log(`[sync] retry attempt ${attempt + 1} in ${delays[attempt]}ms`);
+        await new Promise((resolve) => {
+          retryTimerRef.current = setTimeout(resolve, delays[attempt]);
+        });
+      }
+      if (!navigator.onLine) {
+        console.log('[sync] went offline during retry — aborting');
+        return;
+      }
+      try {
+        await syncOfflineQueue();
+        // Check if there are still pending items in IDB
+        const remaining = await loadQueue();
+        if (remaining.length === 0) {
+          console.log('[sync] all items flushed — done');
+          return;
+        }
+        console.log('[sync] still', remaining.length, 'items in IDB after attempt', attempt + 1);
+      } catch (e) {
+        console.warn(`[sync] attempt ${attempt + 1} failed:`, e);
+      }
+    }
+  }, [syncOfflineQueue]);
 
   // On mount: flush IDB queue if we're already online
   useEffect(() => {
-    if (navigator.onLine) syncOfflineQueue();
+    if (navigator.onLine) syncWithRetry();
   }, [auth.isAuthenticated]); // re-run when user logs in
 
   // Track online/offline + visibilitychange (mobile resumes miss the 'online' event)
   useEffect(() => {
-    const onOnline = () => { setIsOffline(false); syncOfflineQueue(); };
-    const onOffline = () => setIsOffline(true);
-    const onVisible = () => { if (!document.hidden) syncOfflineQueue(); };
+    const onOnline = () => {
+      console.log('[sync] online event fired');
+      setIsOffline(false);
+      syncWithRetry();
+    };
+    const onOffline = () => {
+      console.log('[sync] offline event fired');
+      setIsOffline(true);
+      // Cancel any pending retry
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+    const onVisible = () => {
+      if (!document.hidden) {
+        console.log('[sync] visibilitychange — app foregrounded');
+        syncWithRetry();
+      }
+    };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVisible);
@@ -81,20 +160,22 @@ export default function App() {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', onVisible);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
-  }, [syncOfflineQueue]);
+  }, [syncWithRetry]);
 
   const handleReconnect = useCallback(async () => {
     if (!offlineBanner) return;
     try {
-      // Always request a fresh token here — this is a direct user tap so
-      // the popup is allowed on mobile browsers
+      console.log('[sync] user tapped Sincronizar — requesting fresh token');
       if (!hasValidToken()) {
         await getAccessToken(true);
       }
       await retryOfflineQueue(offlineBanner.items, addToQueue);
       setOfflineBanner(null);
-    } catch {
+      console.log('[sync] manual reconnect successful');
+    } catch (e) {
+      console.warn('[sync] manual reconnect failed:', e);
       // User cancelled auth — keep banner
     }
   }, [offlineBanner, retryOfflineQueue, addToQueue]);
@@ -102,6 +183,9 @@ export default function App() {
   if (!auth.isAuthenticated) {
     return <AuthScreen onSignIn={auth.signIn} savedUser={getSavedUser()} isOffline={isOffline} />;
   }
+
+  // Compute offline count for status bar
+  const offlineCount = queue.filter((q) => q.status === 'offline').length;
 
   const screen = activeScreen === 'camera' && selectedProject
     ? (
@@ -123,6 +207,8 @@ export default function App() {
         sessionCount={sessionCount}
         onOpenCamera={() => setActiveScreen('camera')}
         onSignOut={() => { CameraService.release(); auth.signOut(); }}
+        offlineCount={offlineCount}
+        onRetrySync={syncWithRetry}
       />
     );
 

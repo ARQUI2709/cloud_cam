@@ -16,6 +16,19 @@ export default defineConfig({
         navigateFallback: '/sti_cam/index.html',
         navigateFallbackDenylist: [/^\/api/, /google/],
         runtimeCaching: [
+          // IMPORTANT: Never cache Google Drive / OAuth API calls
+          {
+            urlPattern: /^https:\/\/www\.googleapis\.com\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/accounts\.google\.com\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/oauth2\.googleapis\.com\/.*/i,
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',

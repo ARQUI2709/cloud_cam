@@ -4,6 +4,9 @@
  *
  * El script de GIS se carga dinámicamente.
  * Token y user info persisten en localStorage.
+ *
+ * v2: Improved PWA resilience — retries silent renewal once after 1s delay,
+ *     exposes silentRenewalFailed flag for callers.
  */
 
 import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from '../config/google.js';
@@ -13,6 +16,13 @@ const STORAGE_KEY = 'sti-cam-auth';
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
+
+/**
+ * Module-level flag — set to true when prompt:'none' renewal fails in PWA mode.
+ * Callers (like syncOfflineQueue) can check this to know they need to show a
+ * manual re-auth UI.
+ */
+export let silentRenewalFailed = false;
 
 // Restore from localStorage on load
 try {
@@ -71,6 +81,10 @@ export function getSavedUser() {
     if (saved && saved.user && saved.expiresAt > Date.now()) {
       return saved.user;
     }
+    // Also return user if session exists but token expired (offline resume)
+    if (saved && saved.user) {
+      return saved.user;
+    }
   } catch {}
   return null;
 }
@@ -106,6 +120,8 @@ export function requestAccessToken(forceConsent = false) {
           reject(new Error(response.error_description || response.error));
           return;
         }
+        // Silent renewal succeeded — clear the failure flag
+        silentRenewalFailed = false;
         accessToken = response.access_token;
         tokenExpiresAt = Date.now() + (response.expires_in || 3600) * 1000;
 
@@ -139,16 +155,40 @@ export function requestAccessToken(forceConsent = false) {
 /**
  * Devuelve el access token actual, renovándolo si es necesario.
  * In PWA mode, attempts silent renewal first — never opens a popup mid-upload.
+ * If prompt:'none' fails, retries once after 1s (GIS iframe may not be ready yet).
  */
 export async function getAccessToken(forceConsent = false) {
   if (!forceConsent && accessToken && Date.now() < tokenExpiresAt - 60000) {
     return accessToken;
   }
-  // In PWA: always try silent renewal (prompt:'none')
-  // If the Google session cookie is present, this returns a token instantly.
-  // If not (user cleared cookies), it rejects — caller must show re-auth UI.
-  const result = await requestAccessToken(forceConsent);
-  return result.accessToken;
+
+  console.log('[auth] token expired or missing — attempting renewal', {
+    isPWA: isPWA(),
+    forceConsent,
+  });
+
+  try {
+    const result = await requestAccessToken(forceConsent);
+    console.log('[auth] token renewal succeeded');
+    return result.accessToken;
+  } catch (firstErr) {
+    // In PWA mode with silent renewal, retry once after 1s
+    // GIS iframe sometimes isn't ready immediately after coming online
+    if (isPWA() && !forceConsent) {
+      console.log('[auth] silent renewal failed, retrying in 1s...', firstErr.message);
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const result = await requestAccessToken(false);
+        console.log('[auth] retry succeeded');
+        return result.accessToken;
+      } catch (retryErr) {
+        console.warn('[auth] silent renewal failed after retry:', retryErr.message);
+        silentRenewalFailed = true;
+        throw retryErr;
+      }
+    }
+    throw firstErr;
+  }
 }
 
 /**

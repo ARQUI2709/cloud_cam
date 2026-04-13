@@ -98,6 +98,7 @@ function groupByDate(photos) {
 export default function HomeScreen({
   user, selectedProject, onSelectProject,
   queue, sessionCount, onOpenCamera, onSignOut,
+  offlineCount = 0, onRetrySync,
 }) {
   const project = selectedProject ? getProjectById(selectedProject) : null;
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
@@ -453,6 +454,8 @@ export default function HomeScreen({
           queue={queue}
           uploadingCount={uploadingCount}
           doneCount={doneCount}
+          offlineCount={offlineCount}
+          onRetry={onRetrySync}
         />
       )}
 

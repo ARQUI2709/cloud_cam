@@ -57,18 +57,28 @@ export function useUploadQueue({ updateQueueItem }) {
     // Persist to IndexedDB before attempting upload (non-fatal if IDB unavailable)
     try { await saveToQueue(photo); } catch (_) {}
 
+    // Check if we're offline — don't even attempt Drive API calls
+    if (!navigator.onLine) {
+      console.log(`[queue] offline — saved ${photo.fileName} to IDB, skipping upload`);
+      updateQueueItem(photo.id, { status: 'offline', error: 'Sin conexión' });
+      return;
+    }
+
     // Producción: obtener/crear carpeta y subir
     try {
       const project = getProject(photo.projectId);
       let folderId = folderCacheRef.current.get(photo.projectId);
 
       if (!folderId) {
+        console.log(`[queue] resolving folder for project ${project.name}`);
         folderId = await getProjectFolderId(project.name);
         folderCacheRef.current.set(photo.projectId, folderId);
       }
 
+      console.log(`[queue] enqueuing ${photo.fileName} → folder ${folderId}`);
       getManager().enqueue(photo, folderId, project.name);
     } catch (err) {
+      console.warn(`[queue] enqueue failed for ${photo.fileName}:`, err.message);
       // Network or auth error — leave in IDB, mark as offline in UI
       updateQueueItem(photo.id, { status: 'offline', error: err.message });
     }
@@ -79,6 +89,7 @@ export function useUploadQueue({ updateQueueItem }) {
    * Reconstructs the queue item in React state then enqueues the upload.
    */
   const retryOfflineQueue = useCallback(async (photos, addToQueue) => {
+    console.log(`[queue] retryOfflineQueue called with ${photos.length} items`);
     for (const photo of photos) {
       // Restore blob URL for thumbnail display
       const thumbUrl = URL.createObjectURL(photo.blob);
@@ -101,6 +112,7 @@ export function useUploadQueue({ updateQueueItem }) {
         createdAt: new Date(photo.createdAt),
       });
     }
+    console.log('[queue] retryOfflineQueue complete');
   }, [enqueueUpload, updateQueueItem]);
 
   return { enqueueUpload, retryOfflineQueue };
