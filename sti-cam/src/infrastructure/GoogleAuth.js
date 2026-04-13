@@ -5,8 +5,8 @@
  * El script de GIS se carga dinámicamente.
  * Token y user info persisten en localStorage.
  *
- * v2: Improved PWA resilience — retries silent renewal once after 1s delay,
- *     exposes silentRenewalFailed flag for callers.
+ * v3: Fixed PWA sign-in — separated user-initiated auth (shows popup) from
+ *     background token renewal (silent, prompt:'none').
  */
 
 import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from '../config/google.js';
@@ -91,7 +91,6 @@ export function getSavedUser() {
 
 /**
  * Returns true when running as an installed PWA (standalone display mode).
- * In this context Google popups are blocked — token renewal must be silent.
  */
 function isPWA() {
   return window.matchMedia('(display-mode: standalone)').matches
@@ -100,16 +99,31 @@ function isPWA() {
 
 /**
  * Solicita token de acceso al usuario.
- * @param {boolean} forceConsent - Si true, fuerza pantalla de consentimiento
  *
- * In PWA mode, always uses prompt:'' (no UI) so GIS renews silently using the
- * browser's existing Google session cookie — no popup needed.
- * Falls back to showing a UI prompt only in regular browser tabs.
+ * @param {object} options
+ * @param {boolean} options.forceConsent  — show consent screen (re-auth)
+ * @param {boolean} options.silent        — use prompt:'none' (no UI, background renewal)
+ *
+ * Prompt logic:
+ *   silent=true           → prompt:'none'  (no popup, cookie-based renewal)
+ *   forceConsent=true      → prompt:'consent' (force re-consent)
+ *   otherwise              → prompt:''      (default: shows account picker if needed)
+ *
+ * IMPORTANT: For user-initiated sign-in, do NOT pass silent=true.
+ *            silent=true is ONLY for background token renewal.
  */
-export function requestAccessToken(forceConsent = false) {
+export function requestAccessToken({ forceConsent = false, silent = false } = {}) {
   return new Promise((resolve, reject) => {
-    // In PWA, never show consent/account-picker UI — silent renewal only
-    const prompt = (isPWA() && !forceConsent) ? 'none' : (forceConsent ? 'consent' : '');
+    let prompt;
+    if (silent) {
+      prompt = 'none';
+    } else if (forceConsent) {
+      prompt = 'consent';
+    } else {
+      prompt = '';  // default — GIS decides (account picker if multiple accounts)
+    }
+
+    console.log('[auth] requestAccessToken', { prompt, isPWA: isPWA(), forceConsent, silent });
 
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
@@ -117,10 +131,11 @@ export function requestAccessToken(forceConsent = false) {
       prompt,
       callback: (response) => {
         if (response.error) {
+          console.warn('[auth] token response error:', response.error, response.error_description);
           reject(new Error(response.error_description || response.error));
           return;
         }
-        // Silent renewal succeeded — clear the failure flag
+        // Renewal succeeded — clear the failure flag
         silentRenewalFailed = false;
         accessToken = response.access_token;
         tokenExpiresAt = Date.now() + (response.expires_in || 3600) * 1000;
@@ -144,6 +159,7 @@ export function requestAccessToken(forceConsent = false) {
           });
       },
       error_callback: (err) => {
+        console.warn('[auth] error_callback:', err);
         reject(new Error(err.message || 'Auth error'));
       },
     });
@@ -154,8 +170,13 @@ export function requestAccessToken(forceConsent = false) {
 
 /**
  * Devuelve el access token actual, renovándolo si es necesario.
- * In PWA mode, attempts silent renewal first — never opens a popup mid-upload.
- * If prompt:'none' fails, retries once after 1s (GIS iframe may not be ready yet).
+ *
+ * Background renewal (called internally by Drive/Sheets API helpers):
+ *   - In PWA mode: uses silent renewal (prompt:'none') — no popup mid-upload.
+ *   - If silent renewal fails, retries once after 1s (GIS iframe loading race).
+ *
+ * User-initiated (forceConsent=true, e.g. from Sincronizar button):
+ *   - Always shows Google popup.
  */
 export async function getAccessToken(forceConsent = false) {
   if (!forceConsent && accessToken && Date.now() < tokenExpiresAt - 60000) {
@@ -167,19 +188,26 @@ export async function getAccessToken(forceConsent = false) {
     forceConsent,
   });
 
-  try {
-    const result = await requestAccessToken(forceConsent);
-    console.log('[auth] token renewal succeeded');
+  if (forceConsent) {
+    // User gesture — always show popup
+    const result = await requestAccessToken({ forceConsent: true });
+    console.log('[auth] consent renewal succeeded');
     return result.accessToken;
-  } catch (firstErr) {
-    // In PWA mode with silent renewal, retry once after 1s
-    // GIS iframe sometimes isn't ready immediately after coming online
-    if (isPWA() && !forceConsent) {
+  }
+
+  // Background renewal
+  if (isPWA()) {
+    // PWA: try silent first, then retry once after 1s
+    try {
+      const result = await requestAccessToken({ silent: true });
+      console.log('[auth] silent renewal succeeded');
+      return result.accessToken;
+    } catch (firstErr) {
       console.log('[auth] silent renewal failed, retrying in 1s...', firstErr.message);
       await new Promise((r) => setTimeout(r, 1000));
       try {
-        const result = await requestAccessToken(false);
-        console.log('[auth] retry succeeded');
+        const result = await requestAccessToken({ silent: true });
+        console.log('[auth] silent retry succeeded');
         return result.accessToken;
       } catch (retryErr) {
         console.warn('[auth] silent renewal failed after retry:', retryErr.message);
@@ -187,7 +215,11 @@ export async function getAccessToken(forceConsent = false) {
         throw retryErr;
       }
     }
-    throw firstErr;
+  } else {
+    // Regular browser: default prompt (account picker if needed)
+    const result = await requestAccessToken();
+    console.log('[auth] token renewal succeeded');
+    return result.accessToken;
   }
 }
 
