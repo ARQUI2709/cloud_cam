@@ -161,16 +161,19 @@ export default function HomeScreen({
   }, [viewerIndex, resetZoom]);
 
   // Preload cache: fileId → object URL (full-res)
+  // readyIds triggers re-render when a preload finishes so DriveImage picks it up
   const preloadCache = useRef(new Map());
+  const [readyIds, setReadyIds] = useState(new Set());
+
   useEffect(() => {
     if (viewerIndex === null) return;
-    const toPreload = [viewerIndex - 1, viewerIndex + 1].filter(
+    // Preload current + adjacent photos
+    const toPreload = [viewerIndex - 1, viewerIndex, viewerIndex + 1].filter(
       (i) => i >= 0 && i < photos.length
     );
     toPreload.forEach((i) => {
       const id = photos[i]?.id;
       if (!id || preloadCache.current.has(id)) return;
-      // Mark as in-flight to avoid duplicate fetches
       preloadCache.current.set(id, 'loading');
       getAccessToken()
         .then((token) =>
@@ -182,6 +185,8 @@ export default function HomeScreen({
         .then((blob) => {
           const url = URL.createObjectURL(blob);
           preloadCache.current.set(id, url);
+          // Notify React so DriveImage re-renders with the ready URL
+          setReadyIds((prev) => new Set([...prev, id]));
         })
         .catch(() => preloadCache.current.delete(id));
     });
@@ -677,11 +682,21 @@ export default function HomeScreen({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
+            {/* Thumbnail placeholder — shows instantly from browser cache */}
+            {viewerLoading && photos[viewerIndex].thumbnailLink && (
+              <img
+                src={photos[viewerIndex].thumbnailLink}
+                alt=""
+                style={{ ...styles.viewerImg, filter: 'blur(8px)', transform: 'scale(1.05)', opacity: 0.6, position: 'absolute' }}
+              />
+            )}
             <DriveImage
               key={photos[viewerIndex].id}
               fileId={photos[viewerIndex].id}
-              preloadedUrl={preloadCache.current.get(photos[viewerIndex].id) ?? null}
-              style={styles.viewerImg}
+              preloadedUrl={readyIds.has(photos[viewerIndex].id)
+                ? (preloadCache.current.get(photos[viewerIndex].id) ?? null)
+                : null}
+              style={{ ...styles.viewerImg, opacity: viewerLoading ? 0 : 1, transition: 'opacity 0.2s ease' }}
               alt={photos[viewerIndex].name}
               imgRef={viewerImgRef}
               loading="eager"
