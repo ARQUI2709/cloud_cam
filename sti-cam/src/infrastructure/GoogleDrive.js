@@ -12,6 +12,23 @@ const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 // Cache de folder IDs para no buscar repetidamente
 const folderCache = new Map();
 
+const API_TIMEOUT_MS = 30000;    // 30 s for metadata/search calls
+const UPLOAD_TIMEOUT_MS = 120000; // 2 min for upload requests
+
+/**
+ * fetch() wrapper that aborts after `timeoutMs` milliseconds.
+ * Throws an AbortError so callers can treat it as a transient failure.
+ */
+async function fetchWithTimeout(url, options, timeoutMs = API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Headers con el token de autenticación.
  */
@@ -32,7 +49,7 @@ async function findFolder(name, parentId = 'root') {
     `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
   );
   const headers = await authHeaders();
-  const res = await fetch(`${DRIVE_API}/files?q=${q}&fields=files(id,name)`, { headers });
+  const res = await fetchWithTimeout(`${DRIVE_API}/files?q=${q}&fields=files(id,name)`, { headers });
   const data = await res.json();
 
   const id = data.files?.[0]?.id || null;
@@ -46,7 +63,7 @@ async function findFolder(name, parentId = 'root') {
  */
 async function createFolder(name, parentId = 'root') {
   const headers = await authHeaders();
-  const res = await fetch(`${DRIVE_API}/files`, {
+  const res = await fetchWithTimeout(`${DRIVE_API}/files`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -135,8 +152,9 @@ async function _multipartUpload(token, metadata, blob, mimeType) {
     JSON.stringify(metadata);
 
   const reader = new FileReader();
-  const base64 = await new Promise((resolve) => {
+  const base64 = await new Promise((resolve, reject) => {
     reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image blob'));
     reader.readAsDataURL(blob);
   });
 
@@ -145,7 +163,7 @@ async function _multipartUpload(token, metadata, blob, mimeType) {
     'Content-Transfer-Encoding: base64\r\n\r\n' +
     base64 + closeDelimiter;
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${UPLOAD_API}/files?uploadType=multipart&fields=id`,
     {
       method: 'POST',
@@ -154,7 +172,8 @@ async function _multipartUpload(token, metadata, blob, mimeType) {
         'Content-Type': `multipart/related; boundary=${boundary}`,
       },
       body,
-    }
+    },
+    UPLOAD_TIMEOUT_MS,
   );
 
   if (!res.ok) {
@@ -171,7 +190,7 @@ async function _multipartUpload(token, metadata, blob, mimeType) {
  */
 async function _resumableUpload(token, metadata, blob, mimeType, onProgress) {
   // 1. Iniciar sesión resumable
-  const initRes = await fetch(
+  const initRes = await fetchWithTimeout(
     `${UPLOAD_API}/files?uploadType=resumable&fields=id`,
     {
       method: 'POST',
@@ -182,8 +201,13 @@ async function _resumableUpload(token, metadata, blob, mimeType, onProgress) {
         'X-Upload-Content-Length': blob.size,
       },
       body: JSON.stringify(metadata),
-    }
+    },
   );
+
+  if (!initRes.ok) {
+    const errData = await initRes.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Upload failed: ${initRes.status}`);
+  }
 
   const uploadUrl = initRes.headers.get('Location');
   if (!uploadUrl) throw new Error('No upload URL received');
@@ -196,14 +220,14 @@ async function _resumableUpload(token, metadata, blob, mimeType, onProgress) {
     const end = Math.min(offset + CHUNK_SIZE, blob.size);
     const chunk = blob.slice(offset, end);
 
-    const res = await fetch(uploadUrl, {
+    const res = await fetchWithTimeout(uploadUrl, {
       method: 'PUT',
       headers: {
         'Content-Range': `bytes ${offset}-${end - 1}/${blob.size}`,
         'Content-Type': mimeType,
       },
       body: chunk,
-    });
+    }, UPLOAD_TIMEOUT_MS);
 
     if (res.status === 200 || res.status === 201) {
       onProgress?.(1);
@@ -238,7 +262,7 @@ export async function listFiles(folderId) {
 
   do {
     const url = `${DRIVE_API}/files?q=${q}&fields=${fields}&orderBy=createdTime desc&pageSize=1000${pageToken ? `&pageToken=${pageToken}` : ''}`;
-    const res = await fetch(url, { headers });
+    const res = await fetchWithTimeout(url, { headers });
     if (!res.ok) throw new Error(`Failed to list files: ${res.status}`);
     const data = await res.json();
     all.push(...(data.files || []));
@@ -254,7 +278,7 @@ export async function listFiles(folderId) {
  */
 export async function deleteFile(fileId) {
   const headers = await authHeaders();
-  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
+  const res = await fetchWithTimeout(`${DRIVE_API}/files/${fileId}`, {
     method: 'DELETE',
     headers,
   });

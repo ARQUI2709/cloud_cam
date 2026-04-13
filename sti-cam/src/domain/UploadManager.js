@@ -72,7 +72,9 @@ export class UploadManager {
       console.error(`[upload] failed ${photo.fileName} (attempt ${retryCount + 1}):`, err);
       // Auth/network errors are transient — keep in IDB for retry, mark as offline
       // Permanent errors (e.g. bad file) mark as error and remove from IDB
-      const isTransient = !err.message || /fetch|network|offline|401|403|token/i.test(err.message);
+      const isTransient = !err.message
+        || err.name === 'AbortError'
+        || /fetch|network|offline|abort|401|403|token/i.test(err.message);
 
       if (isTransient && retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAYS[retryCount] || RETRY_DELAYS[RETRY_DELAYS.length - 1];
