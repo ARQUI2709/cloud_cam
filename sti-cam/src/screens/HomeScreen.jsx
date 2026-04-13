@@ -117,48 +117,15 @@ export default function HomeScreen({
   const [showInfo, setShowInfo] = useState(false);
   const [viewerLoading, setViewerLoading] = useState(false);
   const thumbStripRef = useRef(null);
-  const viewerImgRef = useRef(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchDeltaX = useRef(0);
+  const touchDeltaY = useRef(0);
 
-  // Zoom / pan / swipe gesture state (all in refs — no re-render during gesture)
-  const gesture = useRef({
-    // current transform
-    scale: 1, tx: 0, ty: 0,
-    // swipe tracking (1-finger, only when scale === 1)
-    swipeStartX: 0, swipeDelta: 0,
-    // pinch tracking
-    pinchStartDist: 0, pinchStartScale: 1,
-    pinchMidX: 0, pinchMidY: 0,
-    // pan tracking (1-finger while zoomed)
-    panStartX: 0, panStartY: 0, panStartTx: 0, panStartTy: 0,
-    // double-tap
-    lastTap: 0,
-  });
-
-  const applyTransform = useCallback((scale, tx, ty) => {
-    const img = viewerImgRef.current;
-    if (!img) return;
-    img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
-    img.style.transition = 'none';
-  }, []);
-
-  const snapTransform = useCallback((scale, tx, ty) => {
-    const img = viewerImgRef.current;
-    if (!img) return;
-    img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
-    img.style.transition = 'transform 0.2s ease';
-  }, []);
-
-  const resetZoom = useCallback(() => {
-    const g = gesture.current;
-    g.scale = 1; g.tx = 0; g.ty = 0;
-    snapTransform(1, 0, 0);
-  }, [snapTransform]);
-
-  // Reset zoom and show spinner whenever the viewed photo changes
+  // Show spinner whenever the viewed photo changes
   useEffect(() => {
     if (viewerIndex !== null) setViewerLoading(true);
-    resetZoom();
-  }, [viewerIndex, resetZoom]);
+  }, [viewerIndex]);
 
   // Preload cache: fileId → object URL (full-res)
   // readyIds triggers re-render when a preload finishes so DriveImage picks it up
@@ -167,7 +134,6 @@ export default function HomeScreen({
 
   useEffect(() => {
     if (viewerIndex === null) return;
-    // Preload current + adjacent photos
     const toPreload = [viewerIndex - 1, viewerIndex, viewerIndex + 1].filter(
       (i) => i >= 0 && i < photos.length
     );
@@ -185,104 +151,61 @@ export default function HomeScreen({
         .then((blob) => {
           const url = URL.createObjectURL(blob);
           preloadCache.current.set(id, url);
-          // Notify React so DriveImage re-renders with the ready URL
           setReadyIds((prev) => new Set([...prev, id]));
         })
         .catch(() => preloadCache.current.delete(id));
     });
   }, [viewerIndex, photos]);
 
-  const clampPan = useCallback((scale, tx, ty) => {
-    const img = viewerImgRef.current;
-    if (!img) return { tx, ty };
-    const rect = img.parentElement?.getBoundingClientRect();
-    if (!rect) return { tx, ty };
-    const maxTx = (rect.width  * (scale - 1)) / 2;
-    const maxTy = (rect.height * (scale - 1)) / 2;
-    return {
-      tx: Math.max(-maxTx, Math.min(maxTx, tx)),
-      ty: Math.max(-maxTy, Math.min(maxTy, ty)),
-    };
+  const handleTouchStart = useCallback((e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    touchDeltaX.current = 0;
+    touchDeltaY.current = 0;
   }, []);
 
-  const handleTouchStart = useCallback((e) => {
-    const g = gesture.current;
-    if (e.touches.length === 1) {
-      const t = e.touches[0];
-      if (g.scale <= 1) {
-        // swipe navigation
-        g.swipeStartX = t.clientX;
-        g.swipeDelta = 0;
-      } else {
-        // pan while zoomed
-        g.panStartX = t.clientX;
-        g.panStartY = t.clientY;
-        g.panStartTx = g.tx;
-        g.panStartTy = g.ty;
-      }
-      // double-tap detection
-      const now = Date.now();
-      if (now - g.lastTap < 300) {
-        if (g.scale > 1) {
-          resetZoom();
-        } else {
-          const newScale = 2.5;
-          const clamped = clampPan(newScale, 0, 0);
-          g.scale = newScale; g.tx = clamped.tx; g.ty = clamped.ty;
-          snapTransform(newScale, clamped.tx, clamped.ty);
-        }
-        g.lastTap = 0;
-        return;
-      }
-      g.lastTap = now;
-    } else if (e.touches.length === 2) {
-      const [a, b] = [e.touches[0], e.touches[1]];
-      g.pinchStartDist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
-      g.pinchStartScale = g.scale;
-      g.pinchMidX = (a.clientX + b.clientX) / 2;
-      g.pinchMidY = (a.clientY + b.clientY) / 2;
-    }
-  }, [resetZoom, snapTransform, clampPan]);
-
   const handleTouchMove = useCallback((e) => {
-    const g = gesture.current;
-    if (e.touches.length === 1) {
-      if (g.scale <= 1) {
-        g.swipeDelta = e.touches[0].clientX - g.swipeStartX;
-      } else {
-        const dx = e.touches[0].clientX - g.panStartX;
-        const dy = e.touches[0].clientY - g.panStartY;
-        const clamped = clampPan(g.scale, g.panStartTx + dx, g.panStartTy + dy);
-        g.tx = clamped.tx; g.ty = clamped.ty;
-        applyTransform(g.scale, g.tx, g.ty);
-      }
-    } else if (e.touches.length === 2) {
-      e.preventDefault();
-      const [a, b] = [e.touches[0], e.touches[1]];
-      const dist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
-      const newScale = Math.min(4, Math.max(1, g.pinchStartScale * (dist / g.pinchStartDist)));
-      const clamped = clampPan(newScale, g.tx, g.ty);
-      g.scale = newScale; g.tx = clamped.tx; g.ty = clamped.ty;
-      applyTransform(newScale, clamped.tx, clamped.ty);
-    }
-  }, [applyTransform, clampPan]);
+    touchDeltaX.current = e.touches[0].clientX - touchStartX.current;
+    touchDeltaY.current = e.touches[0].clientY - touchStartY.current;
+  }, []);
 
-  const handleTouchEnd = useCallback((e) => {
-    const g = gesture.current;
-    if (e.touches.length === 0 && g.scale <= 1) {
-      const threshold = 60;
-      if (g.swipeDelta > threshold && viewerIndex > 0) {
+  const handleTouchEnd = useCallback(() => {
+    const dx = touchDeltaX.current;
+    const dy = touchDeltaY.current;
+    const H_THRESHOLD = 60;
+    const V_THRESHOLD = 80;
+    // Determine primary axis
+    if (Math.abs(dy) > Math.abs(dx)) {
+      // Vertical gesture
+      if (dy > V_THRESHOLD) {
+        // Pull down → close viewer
+        setViewerIndex(null);
+        setConfirmDeletePhoto(false);
+      } else if (dy < -V_THRESHOLD) {
+        // Pull up → open info panel
+        setShowInfo(true);
+      }
+    } else {
+      // Horizontal swipe → navigate
+      if (dx > H_THRESHOLD && viewerIndex > 0) {
         setViewerIndex(viewerIndex - 1);
-      } else if (g.swipeDelta < -threshold && viewerIndex < photos.length - 1) {
+      } else if (dx < -H_THRESHOLD && viewerIndex < photos.length - 1) {
         setViewerIndex(viewerIndex + 1);
       }
-      g.swipeDelta = 0;
     }
-    // Snap back to 1× if pinch released below threshold
-    if (e.touches.length < 2 && g.scale < 1.1) {
-      resetZoom();
-    }
-  }, [viewerIndex, photos.length, resetZoom]);
+    touchDeltaX.current = 0;
+    touchDeltaY.current = 0;
+  }, [viewerIndex, photos.length]);
+
+  // Pull-down on info panel to close it
+  const infoTouchStartY = useRef(0);
+  const handleInfoTouchStart = useCallback((e) => {
+    infoTouchStartY.current = e.touches[0].clientY;
+  }, []);
+  const handleInfoTouchEnd = useCallback((e) => {
+    const dy = e.changedTouches[0].clientY - infoTouchStartY.current;
+    if (dy > 80) setShowInfo(false);
+  }, []);
 
   // Multi-select
   const [selectMode, setSelectMode] = useState(false);
@@ -675,7 +598,7 @@ export default function HomeScreen({
             <div style={{ width: 36 }} />
           </div>
 
-          {/* Foto principal con swipe + pinch zoom */}
+          {/* Foto principal con swipe */}
           <div
             style={styles.viewerBody}
             onTouchStart={handleTouchStart}
@@ -698,7 +621,6 @@ export default function HomeScreen({
                 : null}
               style={{ ...styles.viewerImg, opacity: viewerLoading ? 0 : 1, transition: 'opacity 0.2s ease' }}
               alt={photos[viewerIndex].name}
-              imgRef={viewerImgRef}
               loading="eager"
               onLoad={() => setViewerLoading(false)}
             />
@@ -771,7 +693,7 @@ export default function HomeScreen({
 
             return (
               <div style={styles.infoOverlay} onClick={() => setShowInfo(false)}>
-                <div style={styles.infoSheet} onClick={(e) => e.stopPropagation()}>
+                <div style={styles.infoSheet} onClick={(e) => e.stopPropagation()} onTouchStart={handleInfoTouchStart} onTouchEnd={handleInfoTouchEnd}>
                   <div style={styles.infoHandle} />
 
                   {/* Date & filename */}
@@ -961,7 +883,10 @@ const styles = {
   },
   gallerySectionHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: `0 ${spacing.xl}px ${spacing.sm}px`,
+    padding: `${spacing.sm}px ${spacing.xl}px`,
+    position: 'sticky', top: 64, zIndex: 9,
+    background: colors.bg,
+    borderBottom: `1px solid ${colors.border}`,
   },
   photoCount: { fontSize: font.sm, color: colors.textDim },
   refreshBtn: {
