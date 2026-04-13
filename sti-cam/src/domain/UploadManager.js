@@ -64,8 +64,11 @@ export class UploadManager {
       }
     } catch (err) {
       console.error(`Upload failed for ${photo.fileName}:`, err);
+      // Auth/network errors are transient — keep in IDB for retry, mark offline
+      // Permanent errors (e.g. bad file) mark as error and remove from IDB
+      const isTransient = !err.message || /fetch|network|offline|401|403|token/i.test(err.message);
       this.onUpdate(photo.id, {
-        status: 'error',
+        status: isTransient ? 'offline' : 'error',
         error: err.message || 'Upload failed',
       });
     } finally {

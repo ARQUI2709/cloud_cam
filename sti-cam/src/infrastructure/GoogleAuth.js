@@ -76,15 +76,31 @@ export function getSavedUser() {
 }
 
 /**
- * Solicita token de acceso al usuario (popup de Google).
- * @param {boolean} forceConsent - Si true, fuerza pantalla de consentimiento aunque ya haya sesión
+ * Returns true when running as an installed PWA (standalone display mode).
+ * In this context Google popups are blocked — token renewal must be silent.
+ */
+function isPWA() {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true; // iOS Safari
+}
+
+/**
+ * Solicita token de acceso al usuario.
+ * @param {boolean} forceConsent - Si true, fuerza pantalla de consentimiento
+ *
+ * In PWA mode, always uses prompt:'' (no UI) so GIS renews silently using the
+ * browser's existing Google session cookie — no popup needed.
+ * Falls back to showing a UI prompt only in regular browser tabs.
  */
 export function requestAccessToken(forceConsent = false) {
   return new Promise((resolve, reject) => {
+    // In PWA, never show consent/account-picker UI — silent renewal only
+    const prompt = (isPWA() && !forceConsent) ? 'none' : (forceConsent ? 'consent' : '');
+
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_SCOPES,
-      prompt: forceConsent ? 'consent' : '',
+      prompt,
       callback: (response) => {
         if (response.error) {
           reject(new Error(response.error_description || response.error));
@@ -122,11 +138,15 @@ export function requestAccessToken(forceConsent = false) {
 
 /**
  * Devuelve el access token actual, renovándolo si es necesario.
+ * In PWA mode, attempts silent renewal first — never opens a popup mid-upload.
  */
 export async function getAccessToken(forceConsent = false) {
   if (!forceConsent && accessToken && Date.now() < tokenExpiresAt - 60000) {
     return accessToken;
   }
+  // In PWA: always try silent renewal (prompt:'none')
+  // If the Google session cookie is present, this returns a token instantly.
+  // If not (user cleared cookies), it rejects — caller must show re-auth UI.
   const result = await requestAccessToken(forceConsent);
   return result.accessToken;
 }
