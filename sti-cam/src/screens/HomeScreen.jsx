@@ -28,7 +28,7 @@ import logoutImg from '../assets/logout.png';
  *                   Used only for the full-screen viewer.
  */
 const DriveImage = memo(function DriveImage({
-  fileId, thumbUrl, thumbnail = false,
+  fileId, thumbUrl, thumbnail = false, preloadedUrl = null,
   style, alt = '', loading = 'eager', imgRef, onLoad,
 }) {
   const [src, setSrc] = useState(thumbnail && thumbUrl ? thumbUrl : null);
@@ -36,6 +36,11 @@ const DriveImage = memo(function DriveImage({
   useEffect(() => {
     if (thumbnail && thumbUrl) {
       setSrc(thumbUrl);
+      return;
+    }
+    // Use preloaded object URL if ready
+    if (preloadedUrl && preloadedUrl !== 'loading') {
+      setSrc(preloadedUrl);
       return;
     }
     // Full-resolution authenticated fetch (also fallback when no thumbnailLink)
@@ -58,7 +63,7 @@ const DriveImage = memo(function DriveImage({
       revoked = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [fileId, thumbnail, thumbUrl]);
+  }, [fileId, thumbnail, thumbUrl, preloadedUrl]);
 
   return <img ref={imgRef} src={src || ''} alt={alt} style={style} loading={loading} onLoad={onLoad} />;
 });
@@ -101,6 +106,8 @@ export default function HomeScreen({
   const [photos, setPhotos] = useState([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const loadMoreRef = useRef(null);
   const [viewerIndex, setViewerIndex] = useState(null);
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -152,6 +159,33 @@ export default function HomeScreen({
     if (viewerIndex !== null) setViewerLoading(true);
     resetZoom();
   }, [viewerIndex, resetZoom]);
+
+  // Preload cache: fileId → object URL (full-res)
+  const preloadCache = useRef(new Map());
+  useEffect(() => {
+    if (viewerIndex === null) return;
+    const toPreload = [viewerIndex - 1, viewerIndex + 1].filter(
+      (i) => i >= 0 && i < photos.length
+    );
+    toPreload.forEach((i) => {
+      const id = photos[i]?.id;
+      if (!id || preloadCache.current.has(id)) return;
+      // Mark as in-flight to avoid duplicate fetches
+      preloadCache.current.set(id, 'loading');
+      getAccessToken()
+        .then((token) =>
+          fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+        .then((res) => res.blob())
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          preloadCache.current.set(id, url);
+        })
+        .catch(() => preloadCache.current.delete(id));
+    });
+  }, [viewerIndex, photos]);
 
   const clampPan = useCallback((scale, tx, ty) => {
     const img = viewerImgRef.current;
@@ -273,20 +307,36 @@ export default function HomeScreen({
     getProjectFolderId(project.name)
       .then(async (folderId) => {
         const files = await listFiles(folderId);
-        if (!cancelled) setPhotos(files);
-        // Backfill sheet with any photos not yet registered (non-critical)
-        try {
-          const spreadsheetId = await getOrCreateSheet(project.name, folderId);
-          await syncSheetFromDrive(spreadsheetId, files);
-        } catch (e) {
-          console.warn('[sheet] sync from Drive failed (non-critical):', e);
+        if (!cancelled) {
+          setPhotos(files);
+          setVisibleCount(30);
+          setLoadingPhotos(false);
         }
+        // Backfill sheet in background — does not block gallery render
+        getOrCreateSheet(project.name, folderId)
+          .then((spreadsheetId) => syncSheetFromDrive(spreadsheetId, files))
+          .catch((e) => console.warn('[sheet] sync from Drive failed (non-critical):', e));
       })
-      .catch(() => { if (!cancelled) setPhotos([]); })
-      .finally(() => { if (!cancelled) setLoadingPhotos(false); });
+      .catch(() => { if (!cancelled) { setPhotos([]); setLoadingPhotos(false); } });
     return () => { cancelled = true; };
   }, [selectedProject, refreshTick]);
 
+
+  // Load more photos when user scrolls to the bottom sentinel
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((c) => c + 30);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [photos.length, visibleCount]);
 
   const handleShare = async (photo) => {
     setSharing(true);
@@ -409,7 +459,8 @@ export default function HomeScreen({
     }
   }, [viewerIndex]);
 
-  const dateGroups = groupByDate(photos);
+  const visiblePhotos = photos.slice(0, visibleCount);
+  const dateGroups = groupByDate(visiblePhotos);
 
   return (
     <div style={styles.container}>
@@ -528,7 +579,7 @@ export default function HomeScreen({
               <div style={styles.dateHeader}>{date}</div>
               <div style={styles.grid}>
                 {groupPhotos.map((photo) => {
-                  const idx = photos.indexOf(photo);
+                  const idx = photos.findIndex((p) => p.id === photo.id);
                   const isSelected = selectedIds.has(photo.id);
                   return (
                     <div
@@ -551,6 +602,9 @@ export default function HomeScreen({
               </div>
             </div>
           ))}
+          {!loadingPhotos && visibleCount < photos.length && (
+            <div ref={loadMoreRef} style={{ height: 1 }} />
+          )}
         </div>
       )}
 
@@ -626,6 +680,7 @@ export default function HomeScreen({
             <DriveImage
               key={photos[viewerIndex].id}
               fileId={photos[viewerIndex].id}
+              preloadedUrl={preloadCache.current.get(photos[viewerIndex].id) ?? null}
               style={styles.viewerImg}
               alt={photos[viewerIndex].name}
               imgRef={viewerImgRef}
