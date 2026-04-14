@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useCamera } from '../hooks/useCamera';
-import { useUploadQueue } from '../hooks/useUploadQueue';
 import { createPhoto } from '../domain/Photo';
 import { getProject } from '../config/projects';
 import AspectPicker from '../components/AspectPicker';
@@ -13,12 +12,11 @@ import galleryIcon from '../assets/images.png';
 const ASPECTS = ['4:3', '1:1', 'full'];
 
 export default function CameraScreen({
-  project, queue, sessionCount, addToQueue, updateQueueItem, onClose,
+  project, queue, sessionCount, addToQueue, updateQueueItem, enqueueUpload, onClose,
 }) {
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
   const camera = useCamera();
-  const { enqueueUpload } = useUploadQueue({ updateQueueItem });
 
   const [aspect, setAspect] = useState('full');
   const [flashAnim, setFlashAnim] = useState(false);

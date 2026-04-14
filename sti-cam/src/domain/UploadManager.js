@@ -5,6 +5,8 @@
  * v2: Adds automatic retry with exponential backoff for transient failures.
  */
 
+import { logger } from '../infrastructure/Logger.js';
+
 const MAX_CONCURRENT = 2;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [3000, 10000, 30000]; // 3s, 10s, 30s
@@ -26,7 +28,7 @@ export class UploadManager {
    */
   enqueue(photo, folderId, projectName) {
     this.waiting.push({ photo, folderId, projectName, retryCount: 0 });
-    this._processNext();
+    this._drainQueue();
   }
 
   async _processNext() {
@@ -35,8 +37,12 @@ export class UploadManager {
     this.active++;
     const { photo, folderId, projectName, retryCount } = this.waiting.shift();
 
-    this.onUpdate(photo.id, { status: 'uploading', progress: 10 });
-    console.log(`[upload] starting ${photo.fileName} (attempt ${retryCount + 1})`);
+    try {
+      this.onUpdate(photo.id, { status: 'uploading', progress: 10 });
+    } catch (e) {
+      logger.warn('[upload] onUpdate threw during status set:', e);
+    }
+    logger.log(`[upload] starting ${photo.fileName} (attempt ${retryCount + 1})`);
 
     try {
       const fileId = await this.driveService.uploadFile({
@@ -48,16 +54,20 @@ export class UploadManager {
         location: photo.location,
         captureInfo: photo.captureInfo,
         onProgress: (progress) => {
-          this.onUpdate(photo.id, { progress: Math.round(progress * 90) + 10 });
+          try {
+            this.onUpdate(photo.id, { progress: Math.round(progress * 90) + 10 });
+          } catch (_) {}
         },
       });
 
-      console.log(`[upload] success ${photo.fileName} → ${fileId}`);
-      this.onUpdate(photo.id, {
-        status: 'done',
-        progress: 100,
-        driveFileId: fileId,
-      });
+      logger.log(`[upload] success ${photo.fileName} → ${fileId}`);
+      try {
+        this.onUpdate(photo.id, {
+          status: 'done',
+          progress: 100,
+          driveFileId: fileId,
+        });
+      } catch (_) {}
 
       // Update project sheet
       if (this.sheetsService && projectName) {
@@ -65,11 +75,11 @@ export class UploadManager {
           const spreadsheetId = await this.sheetsService.getOrCreateSheet(projectName, folderId);
           await this.sheetsService.appendPhotoRow(spreadsheetId, { ...photo, driveFileId: fileId });
         } catch (sheetErr) {
-          console.warn('Sheet update failed (non-critical):', sheetErr);
+          logger.warn('Sheet update failed (non-critical):', sheetErr);
         }
       }
     } catch (err) {
-      console.error(`[upload] failed ${photo.fileName} (attempt ${retryCount + 1}):`, err);
+      logger.error(`[upload] failed ${photo.fileName} (attempt ${retryCount + 1}):`, err);
       // Auth/network errors are transient — keep in IDB for retry, mark as offline
       // Permanent errors (e.g. bad file) mark as error and remove from IDB
       const isTransient = !err.message
@@ -78,33 +88,50 @@ export class UploadManager {
 
       if (isTransient && retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAYS[retryCount] || RETRY_DELAYS[RETRY_DELAYS.length - 1];
-        console.log(`[upload] scheduling retry ${retryCount + 1}/${MAX_RETRIES} in ${delay}ms for ${photo.fileName}`);
-        this.onUpdate(photo.id, {
-          status: 'offline',
-          error: `Reintentando en ${Math.round(delay / 1000)}s...`,
-        });
+        logger.log(`[upload] scheduling retry ${retryCount + 1}/${MAX_RETRIES} in ${delay}ms for ${photo.fileName}`);
+        try {
+          this.onUpdate(photo.id, {
+            status: 'offline',
+            error: `Reintentando en ${Math.round(delay / 1000)}s...`,
+          });
+        } catch (_) {}
         setTimeout(() => {
           // Only retry if still online
           if (navigator.onLine) {
             this.waiting.push({ photo, folderId, projectName, retryCount: retryCount + 1 });
-            this._processNext();
+            this._drainQueue();
           } else {
-            console.log(`[upload] offline — skipping retry for ${photo.fileName}`);
-            this.onUpdate(photo.id, {
-              status: 'offline',
-              error: 'Sin conexión — se reintentará al reconectar',
-            });
+            logger.log(`[upload] offline — skipping retry for ${photo.fileName}`);
+            try {
+              this.onUpdate(photo.id, {
+                status: 'offline',
+                error: 'Sin conexión — se reintentará al reconectar',
+              });
+            } catch (_) {}
           }
         }, delay);
       } else {
-        this.onUpdate(photo.id, {
-          status: isTransient ? 'offline' : 'error',
-          error: err.message || 'Upload failed',
-        });
+        try {
+          this.onUpdate(photo.id, {
+            status: isTransient ? 'offline' : 'error',
+            error: err.message || 'Upload failed',
+          });
+        } catch (_) {}
       }
     } finally {
       this.active--;
-      this._processNext();
+      this._drainQueue();
+    }
+  }
+
+  /** Safe wrapper — ensures _processNext never throws unhandled */
+  _drainQueue() {
+    try {
+      this._processNext().catch((e) => {
+        logger.warn('[upload] _processNext rejected:', e);
+      });
+    } catch (e) {
+      logger.warn('[upload] _processNext threw:', e);
     }
   }
 }

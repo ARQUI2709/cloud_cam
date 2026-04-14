@@ -5,6 +5,7 @@ import { getOrCreateSheet, appendPhotoRow } from '../infrastructure/GoogleSheets
 import { getProject } from '../config/projects';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 import { saveToQueue, removeFromQueue } from '../infrastructure/OfflineQueue';
+import { logger } from '../infrastructure/Logger';
 
 /**
  * Hook que conecta el UploadManager con Google Drive.
@@ -59,7 +60,7 @@ export function useUploadQueue({ updateQueueItem }) {
 
     // Check if we're offline — don't even attempt Drive API calls
     if (!navigator.onLine) {
-      console.log(`[queue] offline — saved ${photo.fileName} to IDB, skipping upload`);
+      logger.log(`[queue] offline — saved ${photo.fileName} to IDB, skipping upload`);
       updateQueueItem(photo.id, { status: 'offline', error: 'Sin conexión' });
       return;
     }
@@ -70,15 +71,15 @@ export function useUploadQueue({ updateQueueItem }) {
       let folderId = folderCacheRef.current.get(photo.projectId);
 
       if (!folderId) {
-        console.log(`[queue] resolving folder for project ${project.name}`);
+        logger.log(`[queue] resolving folder for project ${project.name}`);
         folderId = await getProjectFolderId(project.name);
         folderCacheRef.current.set(photo.projectId, folderId);
       }
 
-      console.log(`[queue] enqueuing ${photo.fileName} → folder ${folderId}`);
+      logger.log(`[queue] enqueuing ${photo.fileName} → folder ${folderId}`);
       getManager().enqueue(photo, folderId, project.name);
     } catch (err) {
-      console.warn(`[queue] enqueue failed for ${photo.fileName}:`, err.message);
+      logger.warn(`[queue] enqueue failed for ${photo.fileName}:`, err.message);
       // Network or auth error — leave in IDB, mark as offline in UI
       updateQueueItem(photo.id, { status: 'offline', error: err.message });
     }
@@ -89,7 +90,7 @@ export function useUploadQueue({ updateQueueItem }) {
    * Reconstructs the queue item in React state then enqueues the upload.
    */
   const retryOfflineQueue = useCallback(async (photos, addToQueue) => {
-    console.log(`[queue] retryOfflineQueue called with ${photos.length} items`);
+    logger.log(`[queue] retryOfflineQueue called with ${photos.length} items`);
     for (const photo of photos) {
       // Restore blob URL for thumbnail display
       const thumbUrl = URL.createObjectURL(photo.blob);
@@ -112,7 +113,7 @@ export function useUploadQueue({ updateQueueItem }) {
         createdAt: new Date(photo.createdAt),
       });
     }
-    console.log('[queue] retryOfflineQueue complete');
+    logger.log('[queue] retryOfflineQueue complete');
   }, [enqueueUpload, updateQueueItem]);
 
   return { enqueueUpload, retryOfflineQueue };

@@ -8,6 +8,8 @@ import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import CameraScreen from './screens/CameraScreen';
 import { colors, font, radius } from './styles/theme';
+import { logger } from './infrastructure/Logger';
+import DebugOverlay from './components/DebugOverlay';
 
 export default function App() {
   const auth = useAuth();
@@ -17,6 +19,7 @@ export default function App() {
   const [sessionCount, setSessionCount] = useState(0);
   const [offlineBanner, setOfflineBanner] = useState(null); // null | { count, needsAuth }
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Keep a ref to queue so sync callbacks never see stale state
   const queueRef = useRef(queue);
@@ -37,7 +40,7 @@ export default function App() {
     );
   }, []);
 
-  const { retryOfflineQueue } = useUploadQueue({ updateQueueItem });
+  const { enqueueUpload, retryOfflineQueue } = useUploadQueue({ updateQueueItem });
 
   // Ref for retry timer so we can cancel it on cleanup
   const retryTimerRef = useRef(null);
@@ -48,22 +51,22 @@ export default function App() {
    * Never auto-triggers token refresh — that requires a user gesture on mobile.
    */
   const syncOfflineQueue = useCallback(async () => {
-    console.log('[sync] syncOfflineQueue called', {
+    logger.log('[sync] syncOfflineQueue called', {
       isAuthenticated: auth.isAuthenticated,
       online: navigator.onLine,
     });
 
     if (!auth.isAuthenticated || !navigator.onLine) {
-      console.log('[sync] skipping — not authenticated or offline');
+      logger.log('[sync] skipping — not authenticated or offline');
       return;
     }
 
     let pending;
     try {
       pending = await loadQueue();
-      console.log('[sync] IDB queue loaded:', pending.length, 'items');
+      logger.log('[sync] IDB queue loaded:', pending.length, 'items');
     } catch (e) {
-      console.warn('[sync] failed to load IDB queue:', e);
+      logger.warn('[sync] failed to load IDB queue:', e);
       return;
     }
 
@@ -75,20 +78,20 @@ export default function App() {
         .map((q) => q.id)
     );
     const fresh = pending.filter((p) => !activeIds.has(p.id));
-    console.log('[sync] activeIds:', activeIds.size, '| fresh to process:', fresh.length);
+    logger.log('[sync] activeIds:', activeIds.size, '| fresh to process:', fresh.length);
 
     if (fresh.length === 0) return;
 
     if (hasValidToken()) {
-      console.log('[sync] token valid — flushing silently');
+      logger.log('[sync] token valid — flushing silently');
       try {
         await retryOfflineQueue(fresh, addToQueue);
-        console.log('[sync] flush complete');
+        logger.log('[sync] flush complete');
       } catch (e) {
-        console.warn('[sync] flush failed:', e);
+        logger.warn('[sync] flush failed:', e);
       }
     } else {
-      console.log('[sync] token expired — showing banner for user action');
+      logger.log('[sync] token expired — showing banner for user action');
       setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
     }
   }, [auth.isAuthenticated, retryOfflineQueue, addToQueue]);
@@ -102,13 +105,13 @@ export default function App() {
     const delays = [0, 2000, 5000, 10000]; // immediate, 2s, 5s, 10s
     for (let attempt = 0; attempt < delays.length; attempt++) {
       if (delays[attempt] > 0) {
-        console.log(`[sync] retry attempt ${attempt + 1} in ${delays[attempt]}ms`);
+        logger.log(`[sync] retry attempt ${attempt + 1} in ${delays[attempt]}ms`);
         await new Promise((resolve) => {
           retryTimerRef.current = setTimeout(resolve, delays[attempt]);
         });
       }
       if (!navigator.onLine) {
-        console.log('[sync] went offline during retry — aborting');
+        logger.log('[sync] went offline during retry — aborting');
         return;
       }
       try {
@@ -116,12 +119,12 @@ export default function App() {
         // Check if there are still pending items in IDB
         const remaining = await loadQueue();
         if (remaining.length === 0) {
-          console.log('[sync] all items flushed — done');
+          logger.log('[sync] all items flushed — done');
           return;
         }
-        console.log('[sync] still', remaining.length, 'items in IDB after attempt', attempt + 1);
+        logger.log('[sync] still', remaining.length, 'items in IDB after attempt', attempt + 1);
       } catch (e) {
-        console.warn(`[sync] attempt ${attempt + 1} failed:`, e);
+        logger.warn(`[sync] attempt ${attempt + 1} failed:`, e);
       }
     }
   }, [syncOfflineQueue]);
@@ -134,12 +137,12 @@ export default function App() {
   // Track online/offline + visibilitychange (mobile resumes miss the 'online' event)
   useEffect(() => {
     const onOnline = () => {
-      console.log('[sync] online event fired');
+      logger.log('[sync] online event fired');
       setIsOffline(false);
       syncWithRetry();
     };
     const onOffline = () => {
-      console.log('[sync] offline event fired');
+      logger.log('[sync] offline event fired');
       setIsOffline(true);
       // Cancel any pending retry
       if (retryTimerRef.current) {
@@ -149,7 +152,7 @@ export default function App() {
     };
     const onVisible = () => {
       if (!document.hidden) {
-        console.log('[sync] visibilitychange — app foregrounded');
+        logger.log('[sync] visibilitychange — app foregrounded');
         syncWithRetry();
       }
     };
@@ -175,7 +178,7 @@ export default function App() {
       try {
         const pending = await loadQueue();
         if (pending.length === 0) return;
-        console.log(`[sync] periodic check — ${pending.length} items pending, attempting flush`);
+        logger.log(`[sync] periodic check — ${pending.length} items pending, attempting flush`);
         syncOfflineQueue();
       } catch (_) {}
     }, 30000);
@@ -190,7 +193,7 @@ export default function App() {
    */
   const manualRetry = useCallback(async () => {
     if (!navigator.onLine) {
-      console.log('[sync] manualRetry — still offline, skipping');
+      logger.log('[sync] manualRetry — still offline, skipping');
       return;
     }
     let pending;
@@ -200,9 +203,9 @@ export default function App() {
       return;
     }
     try {
-      console.log('[sync] manualRetry — user gesture, flushing', pending.length, 'items');
+      logger.log('[sync] manualRetry — user gesture, flushing', pending.length, 'items');
       if (!hasValidToken()) {
-        console.log('[sync] manualRetry — token invalid, requesting fresh via popup');
+        logger.log('[sync] manualRetry — token invalid, requesting fresh via popup');
         await getAccessToken(true);
       }
       const currentQueue = queueRef.current;
@@ -214,9 +217,9 @@ export default function App() {
       const fresh = pending.filter((p) => !activeIds.has(p.id));
       await retryOfflineQueue(fresh, addToQueue);
       setOfflineBanner(null);
-      console.log('[sync] manualRetry complete');
+      logger.log('[sync] manualRetry complete');
     } catch (e) {
-      console.warn('[sync] manualRetry failed:', e);
+      logger.warn('[sync] manualRetry failed:', e);
     }
   }, [retryOfflineQueue, addToQueue]);
 
@@ -235,6 +238,7 @@ export default function App() {
         sessionCount={sessionCount}
         addToQueue={addToQueue}
         updateQueueItem={updateQueueItem}
+        enqueueUpload={enqueueUpload}
         onClose={() => setActiveScreen('home')}
       />
     )
@@ -266,6 +270,15 @@ export default function App() {
           <button onClick={() => setOfflineBanner(null)} style={styles.bannerDismiss}>✕</button>
         </div>
       )}
+      <button
+        onClick={() => setShowDebug((v) => !v)}
+        style={styles.debugToggle}
+        aria-label="Debug log"
+        title="Debug log"
+      >
+        ⓘ
+      </button>
+      {showDebug && <DebugOverlay onClose={() => setShowDebug(false)} />}
     </>
   );
 }
@@ -290,5 +303,13 @@ const styles = {
   bannerDismiss: {
     background: 'none', border: 'none', color: colors.textMuted,
     fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1,
+  },
+  debugToggle: {
+    position: 'fixed', bottom: 12, right: 12, zIndex: 150,
+    width: 32, height: 32, borderRadius: '50%',
+    background: 'rgba(0,0,0,0.5)', border: `1px solid ${colors.border}`,
+    color: colors.textMuted, fontSize: 14, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0,
   },
 };

@@ -10,6 +10,7 @@
  */
 
 import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from '../config/google.js';
+import { logger } from './Logger.js';
 
 const STORAGE_KEY = 'sti-cam-auth';
 
@@ -54,8 +55,19 @@ function loadGisScript() {
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+
+    const timer = setTimeout(() => {
+      reject(new Error('Google Identity Services script timeout'));
+    }, 15000);
+
+    script.onload = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    script.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error('Failed to load Google Identity Services'));
+    };
     document.head.appendChild(script);
   });
 }
@@ -123,7 +135,16 @@ export function requestAccessToken({ forceConsent = false, silent = false } = {}
       prompt = '';  // default — GIS decides (account picker if multiple accounts)
     }
 
-    console.log('[auth] requestAccessToken', { prompt, isPWA: isPWA(), forceConsent, silent });
+    let timer = null;
+    if (silent) {
+      timer = setTimeout(() => {
+        reject(new Error('Silent token renewal timed out.'));
+      }, 15000);
+    }
+
+    const clearTimer = () => { if (timer) clearTimeout(timer); };
+
+    logger.log('[auth] requestAccessToken', { prompt, isPWA: isPWA(), forceConsent, silent });
 
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
@@ -131,7 +152,8 @@ export function requestAccessToken({ forceConsent = false, silent = false } = {}
       prompt,
       callback: (response) => {
         if (response.error) {
-          console.warn('[auth] token response error:', response.error, response.error_description);
+          clearTimer();
+          logger.warn('[auth] token response error:', response.error, response.error_description);
           reject(new Error(response.error_description || response.error));
           return;
         }
@@ -140,26 +162,35 @@ export function requestAccessToken({ forceConsent = false, silent = false } = {}
         accessToken = response.access_token;
         tokenExpiresAt = Date.now() + (response.expires_in || 3600) * 1000;
 
+        const controller = new AbortController();
+        const fetchTimer = setTimeout(() => controller.abort(), 10000);
+
         fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
         })
           .then((r) => r.json())
           .then((info) => {
+            clearTimeout(fetchTimer);
             const user = {
               email: info.email,
               name: info.name || info.email,
               picture: info.picture,
             };
             persistSession(user);
+            clearTimer();
             resolve({ accessToken, ...user });
           })
           .catch(() => {
+            clearTimeout(fetchTimer);
             persistSession(null);
+            clearTimer();
             resolve({ accessToken, email: '', name: '' });
           });
       },
       error_callback: (err) => {
-        console.warn('[auth] error_callback:', err);
+        clearTimer();
+        logger.warn('[auth] error_callback:', err);
         reject(new Error(err.message || 'Auth error'));
       },
     });
@@ -183,7 +214,7 @@ export async function getAccessToken(forceConsent = false) {
     return accessToken;
   }
 
-  console.log('[auth] token expired or missing — attempting renewal', {
+  logger.log('[auth] token expired or missing — attempting renewal', {
     isPWA: isPWA(),
     forceConsent,
   });
@@ -191,7 +222,7 @@ export async function getAccessToken(forceConsent = false) {
   if (forceConsent) {
     // User gesture — always show popup
     const result = await requestAccessToken({ forceConsent: true });
-    console.log('[auth] consent renewal succeeded');
+    logger.log('[auth] consent renewal succeeded');
     return result.accessToken;
   }
 
@@ -200,17 +231,17 @@ export async function getAccessToken(forceConsent = false) {
     // PWA: try silent first, then retry once after 1s
     try {
       const result = await requestAccessToken({ silent: true });
-      console.log('[auth] silent renewal succeeded');
+      logger.log('[auth] silent renewal succeeded');
       return result.accessToken;
     } catch (firstErr) {
-      console.log('[auth] silent renewal failed, retrying in 1s...', firstErr.message);
+      logger.log('[auth] silent renewal failed, retrying in 1s...', firstErr.message);
       await new Promise((r) => setTimeout(r, 1000));
       try {
         const result = await requestAccessToken({ silent: true });
-        console.log('[auth] silent retry succeeded');
+        logger.log('[auth] silent retry succeeded');
         return result.accessToken;
       } catch (retryErr) {
-        console.warn('[auth] silent renewal failed after retry:', retryErr.message);
+        logger.warn('[auth] silent renewal failed after retry:', retryErr.message);
         silentRenewalFailed = true;
         throw retryErr;
       }
@@ -218,7 +249,7 @@ export async function getAccessToken(forceConsent = false) {
   } else {
     // Regular browser: default prompt (account picker if needed)
     const result = await requestAccessToken();
-    console.log('[auth] token renewal succeeded');
+    logger.log('[auth] token renewal succeeded');
     return result.accessToken;
   }
 }
