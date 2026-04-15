@@ -253,6 +253,7 @@ export default function App() {
         sessionCount={sessionCount}
         onOpenCamera={() => setActiveScreen('camera')}
         onSignOut={() => { CameraService.release(); auth.signOut(); }}
+        isOffline={isOffline}
         offlineCount={offlineCount}
         onRetrySync={manualRetry}
       />

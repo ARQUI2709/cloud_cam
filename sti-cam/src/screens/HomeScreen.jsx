@@ -98,7 +98,7 @@ function groupByDate(photos) {
 export default function HomeScreen({
   user, selectedProject, onSelectProject,
   queue, sessionCount, onOpenCamera, onSignOut,
-  offlineCount = 0, onRetrySync,
+  offlineCount = 0, onRetrySync, isOffline = false,
 }) {
   const project = selectedProject ? getProjectById(selectedProject) : null;
   const uploadingCount = queue.filter((q) => q.status === 'uploading').length;
@@ -406,7 +406,7 @@ export default function HomeScreen({
             <span style={styles.countBadge}>{uploadingCount}</span>
           )}
           <div style={styles.driveBadge}>
-            <span style={{ ...styles.driveDot, background: (user && GOOGLE_CLIENT_ID) ? colors.success : colors.error }} />
+            <span style={{ ...styles.driveDot, background: (user && GOOGLE_CLIENT_ID && !isOffline) ? colors.success : colors.error }} />
             Drive
           </div>
           <button onClick={() => setShowLogoutConfirm(true)} style={styles.logoutBtn} title="Cerrar sesión">

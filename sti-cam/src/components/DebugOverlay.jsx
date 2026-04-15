@@ -33,7 +33,8 @@ export default function DebugOverlay({ onClose }) {
 
   return (
     <div style={styles.overlay}>
-      <div style={styles.header}>
+      <style>{safeAreaStyle}</style>
+      <div style={styles.header} className="dbg-header">
         <span style={styles.title}>Debug log ({entries.length})</span>
         <button onClick={copyAll} style={styles.btn}>
           {copied ? '✓ Copiado' : 'Copiar'}
@@ -65,6 +66,14 @@ function colorFor(level) {
   return colors.text;
 }
 
+const safeAreaStyle = `
+  .dbg-header {
+    padding-top: max(10px, env(safe-area-inset-top, 10px)) !important;
+    padding-left: max(12px, env(safe-area-inset-left, 12px)) !important;
+    padding-right: max(12px, env(safe-area-inset-right, 12px)) !important;
+  }
+`;
+
 const styles = {
   overlay: {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -74,7 +83,8 @@ const styles = {
   },
   header: {
     display: 'flex', alignItems: 'center', gap: 8,
-    padding: '10px 12px', borderBottom: `1px solid ${colors.border}`,
+    padding: '10px 12px', paddingBottom: 10,
+    borderBottom: `1px solid ${colors.border}`,
     background: colors.bgCard,
   },
   title: { flex: 1, color: colors.textWhite, fontSize: font.sm, fontWeight: 600 },
