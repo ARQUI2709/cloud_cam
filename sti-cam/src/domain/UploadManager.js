@@ -70,14 +70,9 @@ export class UploadManager {
         });
       } catch (_) {}
 
-      // Update project sheet
+      // Update project sheet — retry up to 3× with backoff
       if (this.sheetsService && projectName) {
-        try {
-          const spreadsheetId = await this.sheetsService.getOrCreateSheet(projectName, folderId);
-          await this.sheetsService.appendPhotoRow(spreadsheetId, { ...photo, driveFileId: fileId });
-        } catch (sheetErr) {
-          logger.warn('Sheet update failed (non-critical):', sheetErr);
-        }
+        await this._appendSheetWithRetry(photo, fileId, projectName, folderId);
       }
     } catch (err) {
       logger.error(`[upload] failed ${photo.fileName} (attempt ${retryCount + 1}):`, err);
@@ -133,6 +128,26 @@ export class UploadManager {
     } finally {
       this.active--;
       this._drainQueue();
+    }
+  }
+
+  /** Append a row to the project sheet, retrying up to 3× on transient failure. */
+  async _appendSheetWithRetry(photo, fileId, projectName, folderId) {
+    const DELAYS = [2000, 5000, 10000];
+    for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
+      try {
+        const spreadsheetId = await this.sheetsService.getOrCreateSheet(projectName, folderId);
+        await this.sheetsService.appendPhotoRow(spreadsheetId, { ...photo, driveFileId: fileId });
+        if (attempt > 0) logger.log(`[sheet] append succeeded on attempt ${attempt + 1}`);
+        return;
+      } catch (err) {
+        if (attempt < DELAYS.length) {
+          logger.warn(`[sheet] append failed (attempt ${attempt + 1}), retrying in ${DELAYS[attempt] / 1000}s:`, err);
+          await new Promise((r) => setTimeout(r, DELAYS[attempt]));
+        } else {
+          logger.warn('[sheet] append failed after all retries (non-critical):', err);
+        }
+      }
     }
   }
 
