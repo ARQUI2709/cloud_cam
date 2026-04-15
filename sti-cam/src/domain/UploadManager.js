@@ -6,6 +6,7 @@
  */
 
 import { logger } from '../infrastructure/Logger.js';
+import { removeFromQueue } from '../infrastructure/OfflineQueue.js';
 
 const MAX_CONCURRENT = 2;
 const MAX_RETRIES = 3;
@@ -82,9 +83,16 @@ export class UploadManager {
       logger.error(`[upload] failed ${photo.fileName} (attempt ${retryCount + 1}):`, err);
       // Auth/network errors are transient — keep in IDB for retry, mark as offline
       // Permanent errors (e.g. bad file) mark as error and remove from IDB
-      const isTransient = !err.message
+      // NotFoundError from IndexedDB (iOS PWA blob corruption) is permanent —
+      // the bytes are gone, retrying cannot recover them.
+      const isDeadBlob = err.name === 'NotFoundError'
+        || /object can ?not be found/i.test(err.message || '');
+
+      const isTransient = !isDeadBlob && (
+        !err.message
         || err.name === 'AbortError'
-        || /fetch|network|offline|abort|401|403|token/i.test(err.message);
+        || /fetch|network|offline|abort|401|403|token/i.test(err.message)
+      );
 
       if (isTransient && retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAYS[retryCount] || RETRY_DELAYS[RETRY_DELAYS.length - 1];
@@ -111,12 +119,20 @@ export class UploadManager {
           }
         }, delay);
       } else {
+        const permanent = isDeadBlob || !isTransient;
         try {
           this.onUpdate(photo.id, {
-            status: isTransient ? 'offline' : 'error',
-            error: err.message || 'Upload failed',
+            status: permanent ? 'error' : 'offline',
+            error: isDeadBlob
+              ? 'Foto corrupta en almacenamiento offline — no recuperable'
+              : err.message || 'Upload failed',
           });
         } catch (_) {}
+        if (permanent) {
+          removeFromQueue(photo.id).catch((e) => {
+            logger.warn(`[upload] failed to remove dead record ${photo.id}:`, e);
+          });
+        }
       }
     } finally {
       this.active--;
