@@ -41,7 +41,7 @@ export default function DebugOverlay({ onClose }) {
         <button onClick={() => { logger.clear(); setEntries([]); }} style={styles.btn}>
           Limpiar
         </button>
-        <button onClick={onClose} style={styles.btnClose}>✕</button>
+        <button onClick={onClose} style={styles.btnClose}>✕ Cerrar</button>
       </div>
       <div style={styles.list}>
         {entries.length === 0 ? (
@@ -84,9 +84,9 @@ const styles = {
     color: colors.text, fontSize: font.xs, cursor: 'pointer',
   },
   btnClose: {
-    padding: '6px 10px', borderRadius: radius.sm,
-    background: 'transparent', border: 'none',
-    color: colors.textMuted, fontSize: 16, cursor: 'pointer',
+    padding: '6px 14px', borderRadius: radius.sm,
+    background: colors.error, border: 'none',
+    color: colors.white, fontSize: font.xs, fontWeight: 700, cursor: 'pointer',
   },
   list: {
     flex: 1, overflowY: 'auto', padding: '8px 12px',

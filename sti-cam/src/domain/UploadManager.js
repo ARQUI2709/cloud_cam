@@ -81,18 +81,14 @@ export class UploadManager {
       }
     } catch (err) {
       logger.error(`[upload] failed ${photo.fileName} (attempt ${retryCount + 1}):`, err);
-      // Auth/network errors are transient — keep in IDB for retry, mark as offline
-      // Permanent errors (e.g. bad file) mark as error and remove from IDB
-      // NotFoundError from IndexedDB (iOS PWA blob corruption) is permanent —
-      // the bytes are gone, retrying cannot recover them.
+      // Only NotFoundError (iOS PWA dead blob — bytes gone, unrecoverable) is
+      // treated as permanent. Everything else — network failures, timeouts,
+      // "Load failed" (iOS Safari fetch error), auth errors — is transient and
+      // should be retried with backoff so photos are never silently discarded.
       const isDeadBlob = err.name === 'NotFoundError'
         || /object can ?not be found/i.test(err.message || '');
 
-      const isTransient = !isDeadBlob && (
-        !err.message
-        || err.name === 'AbortError'
-        || /fetch|network|offline|abort|401|403|token/i.test(err.message)
-      );
+      const isTransient = !isDeadBlob;
 
       if (isTransient && retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAYS[retryCount] || RETRY_DELAYS[RETRY_DELAYS.length - 1];

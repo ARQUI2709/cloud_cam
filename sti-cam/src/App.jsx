@@ -137,9 +137,11 @@ export default function App() {
   // Track online/offline + visibilitychange (mobile resumes miss the 'online' event)
   useEffect(() => {
     const onOnline = () => {
-      logger.log('[sync] online event fired');
+      logger.log('[sync] online event fired — waiting 3s for connection to stabilise');
       setIsOffline(false);
-      syncWithRetry();
+      // iOS fires `online` before the radio is fully usable; a short delay
+      // dramatically reduces "Load failed" errors on the first upload attempt.
+      setTimeout(syncWithRetry, 3000);
     };
     const onOffline = () => {
       logger.log('[sync] offline event fired');
