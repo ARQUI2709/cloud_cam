@@ -2,10 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const isCapacitor = process.env.CAPACITOR === 'true';
+const base = isCapacitor ? '/' : '/sti_cam/';
+
 export default defineConfig({
   plugins: [
     react(),
-    VitePWA({
+    !isCapacitor && VitePWA({
       registerType: 'autoUpdate',
       // Use the existing manifest.json from public/
       manifest: false,
@@ -13,7 +16,7 @@ export default defineConfig({
         // Cache all assets for offline use
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Don't cache Google OAuth/API calls
-        navigateFallback: '/sti_cam/index.html',
+        navigateFallback: `${base}index.html`,
         navigateFallbackDenylist: [/^\/api/, /google/],
         runtimeCaching: [
           // IMPORTANT: Never cache Google Drive / OAuth API calls
@@ -42,8 +45,8 @@ export default defineConfig({
         ],
       },
     }),
-  ],
-  base: '/sti_cam/',
+  ].filter(Boolean),
+  base,
   server: {
     https: false,      // En dev local. getUserMedia requiere HTTPS en producción
     host: true,        // Accesible desde el celular en la misma red

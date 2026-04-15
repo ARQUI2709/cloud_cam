@@ -3,6 +3,9 @@
  * Abstrae el acceso a la cámara del dispositivo via getUserMedia.
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
+
 const ASPECT_RATIOS = {
   '4:3':  { w: 4, h: 3 },
   '16:9': { w: 16, h: 9 },
@@ -43,6 +46,16 @@ export class CameraService {
       if (cachedStream) {
         cachedStream.getTracks().forEach((t) => t.stop());
         cachedStream = null;
+      }
+
+      // On native (Capacitor), request camera permission via native dialog first
+      if (Capacitor.isNativePlatform()) {
+        const perms = await Camera.requestPermissions({ permissions: ['camera'] });
+        if (perms.camera !== 'granted') {
+          const err = new Error('Camera permission denied');
+          err.name = 'NotAllowedError'; // useCamera.js already handles this error name
+          throw err;
+        }
       }
 
       const videoConstraints = deviceId
