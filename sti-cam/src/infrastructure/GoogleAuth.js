@@ -228,28 +228,11 @@ export async function getAccessToken(forceConsent = false) {
 
   // Background renewal
   if (isPWA()) {
-    // If silent renewal already failed this session, don't retry — surface to UI
-    if (silentRenewalFailed) {
-      throw new Error('interaction_required');
-    }
-    // PWA: try silent first, then retry once after 1s
-    try {
-      const result = await requestAccessToken({ silent: true });
-      logger.log('[auth] silent renewal succeeded');
-      return result.accessToken;
-    } catch (firstErr) {
-      logger.log('[auth] silent renewal failed, retrying in 1s...', firstErr.message);
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const result = await requestAccessToken({ silent: true });
-        logger.log('[auth] silent retry succeeded');
-        return result.accessToken;
-      } catch (retryErr) {
-        logger.warn('[auth] silent renewal failed after retry:', retryErr.message);
-        silentRenewalFailed = true;
-        throw retryErr;
-      }
-    }
+    // PWA blocks the GIS silent-renewal iframe (prompt:'none') — skip it entirely
+    // and surface the re-auth banner so the user can trigger a real popup.
+    logger.warn('[auth] PWA background renewal skipped — requires user gesture');
+    silentRenewalFailed = true;
+    throw new Error('interaction_required');
   } else {
     // Regular browser: default prompt (account picker if needed)
     const result = await requestAccessToken();
