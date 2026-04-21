@@ -214,6 +214,11 @@ export async function getAccessToken(forceConsent = false) {
     return accessToken;
   }
 
+  // Silent renewal already known to be broken — bail immediately, no log spam
+  if (!forceConsent && silentRenewalFailed) {
+    throw new Error('interaction_required');
+  }
+
   logger.log('[auth] token expired or missing — attempting renewal', {
     isPWA: isPWA(),
     forceConsent,
