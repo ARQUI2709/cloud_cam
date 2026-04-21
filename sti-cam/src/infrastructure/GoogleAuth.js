@@ -228,6 +228,10 @@ export async function getAccessToken(forceConsent = false) {
 
   // Background renewal
   if (isPWA()) {
+    // If silent renewal already failed this session, don't retry — surface to UI
+    if (silentRenewalFailed) {
+      throw new Error('interaction_required');
+    }
     // PWA: try silent first, then retry once after 1s
     try {
       const result = await requestAccessToken({ silent: true });

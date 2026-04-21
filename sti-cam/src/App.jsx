@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { useUploadQueue } from './hooks/useUploadQueue';
 import { CameraService } from './infrastructure/CameraService';
 import { loadQueue } from './infrastructure/OfflineQueue';
-import { hasValidToken, getAccessToken, getSavedUser } from './infrastructure/GoogleAuth';
+import { hasValidToken, getAccessToken, getSavedUser, silentRenewalFailed } from './infrastructure/GoogleAuth';
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import CameraScreen from './screens/CameraScreen';
@@ -81,6 +81,12 @@ export default function App() {
     logger.log('[sync] activeIds:', activeIds.size, '| fresh to process:', fresh.length);
 
     if (fresh.length === 0) return;
+
+    if (silentRenewalFailed) {
+      logger.log('[sync] silent renewal previously failed — showing re-auth banner');
+      setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
+      return;
+    }
 
     if (hasValidToken()) {
       logger.log('[sync] token valid — flushing silently');
@@ -265,7 +271,9 @@ export default function App() {
       {offlineBanner && (
         <div style={styles.banner}>
           <span style={styles.bannerText}>
-            {offlineBanner.count} foto{offlineBanner.count !== 1 ? 's' : ''} pendiente{offlineBanner.count !== 1 ? 's' : ''}
+            {offlineBanner.needsAuth
+            ? 'Sesión expirada — inicia sesión para sincronizar'
+            : `${offlineBanner.count} foto${offlineBanner.count !== 1 ? 's' : ''} pendiente${offlineBanner.count !== 1 ? 's' : ''}`}
           </span>
           <button onClick={manualRetry} style={styles.bannerBtn}>
             Sincronizar
