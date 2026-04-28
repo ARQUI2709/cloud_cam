@@ -253,6 +253,7 @@ export async function getAccessToken(forceConsent = false) {
 export function clearToken() {
   accessToken = null;
   tokenExpiresAt = 0;
+  silentRenewalFailed = false;
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved) {
@@ -270,6 +271,8 @@ export function revokeToken() {
     accessToken = null;
     tokenExpiresAt = 0;
   }
+  // Reset silent renewal flag so the next sign-in attempt is not blocked.
+  silentRenewalFailed = false;
   localStorage.removeItem(STORAGE_KEY);
 }
 
