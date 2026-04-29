@@ -4,6 +4,7 @@ import { useUploadQueue } from './hooks/useUploadQueue';
 import { CameraService } from './infrastructure/CameraService';
 import { loadQueue } from './infrastructure/OfflineQueue';
 import { hasValidToken, getAccessToken, getSavedUser, silentRenewalFailed } from './infrastructure/GoogleAuth';
+
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import CameraScreen from './screens/CameraScreen';
@@ -18,6 +19,7 @@ export default function App() {
   const [queue, setQueue] = useState([]);
   const [sessionCount, setSessionCount] = useState(0);
   const [offlineBanner, setOfflineBanner] = useState(null); // null | { count, needsAuth }
+  const [needsReauth, setNeedsReauth] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -44,6 +46,13 @@ export default function App() {
 
   // Ref for retry timer so we can cancel it on cleanup
   const retryTimerRef = useRef(null);
+
+  // Listen for PWA silent-renewal failures from GoogleAuth and surface re-auth banner
+  useEffect(() => {
+    const onAuthRequired = () => setNeedsReauth(true);
+    window.addEventListener('sti-cam:auth-required', onAuthRequired);
+    return () => window.removeEventListener('sti-cam:auth-required', onAuthRequired);
+  }, []);
 
   /**
    * Check IDB for pending photos and flush them.
@@ -204,30 +213,36 @@ export default function App() {
       logger.log('[sync] manualRetry — still offline, skipping');
       return;
     }
-    let pending;
-    try { pending = await loadQueue(); } catch { return; }
-    if (pending.length === 0) {
-      setOfflineBanner(null);
-      return;
-    }
-    try {
-      logger.log('[sync] manualRetry — user gesture, flushing', pending.length, 'items');
-      if (!hasValidToken()) {
+    // Re-auth first if needed (user gesture — triggers real popup)
+    if (!hasValidToken()) {
+      try {
         logger.log('[sync] manualRetry — token invalid, requesting fresh via popup');
         await getAccessToken(true);
+      } catch (e) {
+        logger.warn('[sync] manualRetry — re-auth failed:', e);
+        return;
       }
-      const currentQueue = queueRef.current;
-      const activeIds = new Set(
-        currentQueue
-          .filter((q) => q.status === 'uploading' || q.status === 'done')
-          .map((q) => q.id)
-      );
-      const fresh = pending.filter((p) => !activeIds.has(p.id));
+    }
+    setNeedsReauth(false);
+    setOfflineBanner(null);
+    // Flush any pending IDB items now that we have a valid token
+    let pending;
+    try { pending = await loadQueue(); } catch { return; }
+    if (pending.length === 0) return;
+    const currentQueue = queueRef.current;
+    const activeIds = new Set(
+      currentQueue
+        .filter((q) => q.status === 'uploading' || q.status === 'done')
+        .map((q) => q.id)
+    );
+    const fresh = pending.filter((p) => !activeIds.has(p.id));
+    if (fresh.length === 0) return;
+    try {
+      logger.log('[sync] manualRetry — flushing', fresh.length, 'items');
       await retryOfflineQueue(fresh, addToQueue);
-      setOfflineBanner(null);
       logger.log('[sync] manualRetry complete');
     } catch (e) {
-      logger.warn('[sync] manualRetry failed:', e);
+      logger.warn('[sync] manualRetry flush failed:', e);
     }
   }, [retryOfflineQueue, addToQueue]);
 
@@ -268,17 +283,17 @@ export default function App() {
   return (
     <>
       {screen}
-      {offlineBanner && (
+      {(needsReauth || offlineBanner) && (
         <div style={styles.banner}>
           <span style={styles.bannerText}>
-            {offlineBanner.needsAuth
-            ? 'Sesión expirada — inicia sesión para sincronizar'
-            : `${offlineBanner.count} foto${offlineBanner.count !== 1 ? 's' : ''} pendiente${offlineBanner.count !== 1 ? 's' : ''}`}
+            {needsReauth || offlineBanner?.needsAuth
+              ? 'Sesión expirada — inicia sesión para continuar'
+              : `${offlineBanner.count} foto${offlineBanner.count !== 1 ? 's' : ''} pendiente${offlineBanner.count !== 1 ? 's' : ''}`}
           </span>
           <button onClick={manualRetry} style={styles.bannerBtn}>
-            Sincronizar
+            Iniciar sesión
           </button>
-          <button onClick={() => setOfflineBanner(null)} style={styles.bannerDismiss}>✕</button>
+          <button onClick={() => { setNeedsReauth(false); setOfflineBanner(null); }} style={styles.bannerDismiss}>✕</button>
         </div>
       )}
       <button

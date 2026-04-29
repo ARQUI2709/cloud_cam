@@ -219,10 +219,7 @@ export async function getAccessToken(forceConsent = false) {
     throw new Error('interaction_required');
   }
 
-  logger.log('[auth] token expired or missing — attempting renewal', {
-    isPWA: isPWA(),
-    forceConsent,
-  });
+  logger.log('[auth] token expired — attempting renewal', { isPWA: isPWA(), forceConsent });
 
   if (forceConsent) {
     // User gesture — always show popup
@@ -233,10 +230,13 @@ export async function getAccessToken(forceConsent = false) {
 
   // Background renewal
   if (isPWA()) {
-    // PWA blocks the GIS silent-renewal iframe (prompt:'none') — skip it entirely
-    // and surface the re-auth banner so the user can trigger a real popup.
-    logger.warn('[auth] PWA background renewal skipped — requires user gesture');
-    silentRenewalFailed = true;
+    // PWA blocks the GIS silent-renewal iframe (prompt:'none') — skip it entirely.
+    // Dispatch event on first failure so the UI can show a re-auth banner
+    // without waiting for the next syncOfflineQueue run.
+    if (!silentRenewalFailed) {
+      silentRenewalFailed = true;
+      window.dispatchEvent(new CustomEvent('sti-cam:auth-required'));
+    }
     throw new Error('interaction_required');
   } else {
     // Regular browser: default prompt (account picker if needed)
