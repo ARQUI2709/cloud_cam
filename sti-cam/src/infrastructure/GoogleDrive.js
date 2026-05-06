@@ -5,6 +5,7 @@
 
 import { getAccessToken } from './GoogleAuth.js';
 import { DRIVE_ROOT_FOLDER } from '../config/google.js';
+import { logger } from './Logger.js';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
@@ -100,7 +101,24 @@ export async function getProjectFolderId(projectName) {
 }
 
 /**
+ * Checks if a file with the given name already exists in the folder.
+ * @returns {string|null} existing file ID, or null
+ */
+async function findFile(fileName, folderId) {
+  const q = encodeURIComponent(
+    `name='${fileName}' and '${folderId}' in parents and trashed=false`
+  );
+  const headers = await authHeaders();
+  const res = await fetchWithTimeout(`${DRIVE_API}/files?q=${q}&fields=files(id,name)`, { headers });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.files?.[0]?.id || null;
+}
+
+/**
  * Sube un archivo a Google Drive usando multipart upload.
+ * Checks for an existing file with the same name first — if found, returns
+ * the existing ID without re-uploading (idempotent).
  * @param {object} params
  * @param {Blob} params.blob - El archivo a subir
  * @param {string} params.fileName - Nombre del archivo
@@ -110,6 +128,13 @@ export async function getProjectFolderId(projectName) {
  * @returns {string} file ID del archivo subido
  */
 export async function uploadFile({ blob, fileName, folderId, mimeType = 'image/jpeg', createdAt, location, captureInfo, onProgress }) {
+  const existingId = await findFile(fileName, folderId);
+  if (existingId) {
+    logger.log(`[upload] ${fileName} already in Drive (${existingId}) — skipping`);
+    onProgress?.(1);
+    return existingId;
+  }
+
   const token = await getAccessToken();
 
   const metadata = {
