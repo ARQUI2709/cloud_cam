@@ -28,6 +28,10 @@ export class UploadManager {
    * @param {string} projectName - Nombre del proyecto (para la hoja)
    */
   enqueue(photo, folderId, projectName) {
+    if (this.waiting.some((w) => w.photo.id === photo.id)) {
+      logger.warn(`[upload] duplicate enqueue ignored for ${photo.fileName}`);
+      return;
+    }
     this.waiting.push({ photo, folderId, projectName, retryCount: 0 });
     this._drainQueue();
   }

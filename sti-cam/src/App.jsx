@@ -27,6 +27,8 @@ export default function App() {
   const queueRef = useRef(queue);
   useEffect(() => { queueRef.current = queue; }, [queue]);
 
+  const syncInProgressRef = useRef(false);
+
   const addToQueue = useCallback((item) => {
     setQueue((prev) => {
       // Avoid duplicates when retrying from IDB
@@ -60,54 +62,63 @@ export default function App() {
    * Never auto-triggers token refresh — that requires a user gesture on mobile.
    */
   const syncOfflineQueue = useCallback(async () => {
-    logger.log('[sync] syncOfflineQueue called', {
-      isAuthenticated: auth.isAuthenticated,
-      online: navigator.onLine,
-    });
-
-    if (!auth.isAuthenticated || !navigator.onLine) {
-      logger.log('[sync] skipping — not authenticated or offline');
+    if (syncInProgressRef.current) {
+      logger.log('[sync] already in progress — skipping');
       return;
     }
-
-    let pending;
+    syncInProgressRef.current = true;
     try {
-      pending = await loadQueue();
-      logger.log('[sync] IDB queue loaded:', pending.length, 'items');
-    } catch (e) {
-      logger.warn('[sync] failed to load IDB queue:', e);
-      return;
-    }
+      logger.log('[sync] syncOfflineQueue called', {
+        isAuthenticated: auth.isAuthenticated,
+        online: navigator.onLine,
+      });
 
-    // Read from ref — never stale
-    const currentQueue = queueRef.current;
-    const activeIds = new Set(
-      currentQueue
-        .filter((q) => q.status === 'uploading' || q.status === 'done')
-        .map((q) => q.id)
-    );
-    const fresh = pending.filter((p) => !activeIds.has(p.id));
-    logger.log('[sync] activeIds:', activeIds.size, '| fresh to process:', fresh.length);
-
-    if (fresh.length === 0) return;
-
-    if (silentRenewalFailed) {
-      logger.log('[sync] silent renewal previously failed — showing re-auth banner');
-      setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
-      return;
-    }
-
-    if (hasValidToken()) {
-      logger.log('[sync] token valid — flushing silently');
-      try {
-        await retryOfflineQueue(fresh, addToQueue);
-        logger.log('[sync] flush complete');
-      } catch (e) {
-        logger.warn('[sync] flush failed:', e);
+      if (!auth.isAuthenticated || !navigator.onLine) {
+        logger.log('[sync] skipping — not authenticated or offline');
+        return;
       }
-    } else {
-      logger.log('[sync] token expired — showing banner for user action');
-      setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
+
+      let pending;
+      try {
+        pending = await loadQueue();
+        logger.log('[sync] IDB queue loaded:', pending.length, 'items');
+      } catch (e) {
+        logger.warn('[sync] failed to load IDB queue:', e);
+        return;
+      }
+
+      // Read from ref — never stale
+      const currentQueue = queueRef.current;
+      const activeIds = new Set(
+        currentQueue
+          .filter((q) => q.status === 'uploading' || q.status === 'done' || q.status === 'pending')
+          .map((q) => q.id)
+      );
+      const fresh = pending.filter((p) => !activeIds.has(p.id));
+      logger.log('[sync] activeIds:', activeIds.size, '| fresh to process:', fresh.length);
+
+      if (fresh.length === 0) return;
+
+      if (silentRenewalFailed) {
+        logger.log('[sync] silent renewal previously failed — showing re-auth banner');
+        setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
+        return;
+      }
+
+      if (hasValidToken()) {
+        logger.log('[sync] token valid — flushing silently');
+        try {
+          await retryOfflineQueue(fresh, addToQueue);
+          logger.log('[sync] flush complete');
+        } catch (e) {
+          logger.warn('[sync] flush failed:', e);
+        }
+      } else {
+        logger.log('[sync] token expired — showing banner for user action');
+        setOfflineBanner({ count: fresh.length, needsAuth: true, items: fresh });
+      }
+    } finally {
+      syncInProgressRef.current = false;
     }
   }, [auth.isAuthenticated, retryOfflineQueue, addToQueue]);
   // Note: queue removed from deps — we read queueRef.current instead
@@ -232,7 +243,7 @@ export default function App() {
     const currentQueue = queueRef.current;
     const activeIds = new Set(
       currentQueue
-        .filter((q) => q.status === 'uploading' || q.status === 'done')
+        .filter((q) => q.status === 'uploading' || q.status === 'done' || q.status === 'pending')
         .map((q) => q.id)
     );
     const fresh = pending.filter((p) => !activeIds.has(p.id));
